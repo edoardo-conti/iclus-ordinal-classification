@@ -1,0 +1,11 @@
+h5py
+matplotlib
+tqdm
+seaborn
+scikit-learn 
+albumentations
+keras 
+tensorflow 
+tensorflow_probability 
+tensorflow-macos 
+tensorflow-metal
