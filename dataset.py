@@ -33,7 +33,7 @@ class RichHDF5Dataset(Sequence):
         cached_data = self.load_cached_data()
         if cached_data is not None:
             total_videos, total_frames, frame_index_map = cached_data
-            print(f"{total_videos} videos ({total_frames} frames) loaded from cached data.")
+            print(f"[dataset] {total_videos} videos ({total_frames} frames) loaded from cached data.")
         else:
             total_videos = 0
             max_frame_idx_end = 0
@@ -56,7 +56,7 @@ class RichHDF5Dataset(Sequence):
 
             # Save data to pickle file for future use
             self.save_cached_data((total_videos, total_frames, frame_index_map))
-            print(f"\n{total_videos} videos ({total_frames} frames) loaded and cached.")
+            print(f"\n[dataset] {total_videos} videos ({total_frames} frames) loaded and cached.")
 
         return total_videos, total_frames, frame_index_map
 
@@ -308,9 +308,9 @@ def split_strategy(dataset, ratios=[0.6, 0.2, 0.2], pkl_file=None, rseed=0):
     # 5. Diagnostic checks and return values
     total_frames_calc = len(train_indices) + len(val_indices) + len(test_indices)
     if total_frames != total_frames_calc:
-        print(f"dataset splitting gone wrong (expected: {total_frames}, got:{total_frames_calc})")
+        print(f"[dataset] splitting gone wrong (expected: {total_frames}, got:{total_frames_calc})")
     
-    # Sum up statistics info
+    # sum up statistics info
     split_info = {
         'medical_center_patients': medical_center_patients,
         'frames_by_center': frames_by_center,
@@ -327,10 +327,10 @@ def split_strategy(dataset, ratios=[0.6, 0.2, 0.2], pkl_file=None, rseed=0):
     test_idxs_p = 100 - (train_idxs_p + val_idxs_p)
 
     if val_ratio == 0.0:
-        print(f"dataset split: train={len(train_indices)}({train_idxs_p}%), test={len(test_indices)}({test_idxs_p}%)")
+        print(f"[dataset] dataset split: train={len(train_indices)}({train_idxs_p}%), test={len(test_indices)}({test_idxs_p}%)")
         return train_indices, test_indices, split_info
     
-    print(f"dataset split: train={len(train_indices)}({train_idxs_p}%), val={len(val_indices)}({val_idxs_p}%), test={len(test_indices)}({test_idxs_p}%)")
+    print(f"[dataset] dataset split: train={len(train_indices)}({train_idxs_p}%), val={len(val_indices)}({val_idxs_p}%), test={len(test_indices)}({test_idxs_p}%)")
 
     return train_indices, val_indices, test_indices, split_info
 
@@ -407,9 +407,9 @@ def reduce_sets(train, val=[], test=[], perc=1.0):
     if val:
         num_val_samples = int(len(val) * perc)
         val_indices = random.sample(range(len(val)), num_val_samples)
-        print(f"dataset reduction: {int(perc*100)}% (train={len(train_indices)}, val={len(val_indices)}, test={len(test_indices)})")
+        print(f"[dataset] dataset reduction: {int(perc*100)}% (train={len(train_indices)}, val={len(val_indices)}, test={len(test_indices)})")
         return train_indices, val_indices, test_indices
     
-    print(f"dataset reduction: {int(perc*100)}% (train={len(train_indices)}, test={len(test_indices)})")
+    print(f"[dataset] dataset reduction: {int(perc*100)}% (train={len(train_indices)}, test={len(test_indices)})")
     return train_indices, test_indices
     

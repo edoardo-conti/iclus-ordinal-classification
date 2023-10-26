@@ -1,3 +1,4 @@
+import numpy as np
 import matplotlib.pyplot as plt
 
 def print_split_diagnostic_info(ds_info):
@@ -19,41 +20,70 @@ def print_split_diagnostic_info(ds_info):
             print(f"   {patient}: {frame_count} frames")
 
 
-def plot_split_graphs(train_subset, val_subset, test_subset, ds_info):
-    # Plot the distribution of frames per center
-    frame_counts = ds_info['frames_by_center']
-    centers = list(frame_counts.keys())
-    frame_values = [frame_counts[center] for center in centers]
+def plot_fsplit_info(ds_info, log_scale=False):
+    # Create data for the plot
+    centers = []
+    train_frame_counts = []
+    val_frame_counts = []
+    test_frame_counts = []
 
-    plt.figure(figsize=(12, 6))
-    plt.bar(centers, frame_values)
-    plt.title('Distribution of Frames per Medical Center')
-    plt.xlabel('Medical Center')
-    plt.ylabel('Number of Frames')
-    plt.yscale('log')
-    plt.xticks(rotation=45, fontsize=8)
+    for medical_center in ds_info['medical_center_patients'].keys():
+        centers.append(medical_center)
+        train_frame_count = sum(ds_info['frames_by_center_patient'][medical_center][patient] for patient in ds_info['train_patients_by_center'][medical_center])
+        val_frame_count = sum(ds_info['frames_by_center_patient'][medical_center][patient] for patient in ds_info['val_patients_by_center'][medical_center])
+        test_frame_count = sum(ds_info['frames_by_center_patient'][medical_center][patient] for patient in ds_info['test_patients_by_center'][medical_center])
+        train_frame_counts.append(train_frame_count)
+        val_frame_counts.append(val_frame_count)
+        test_frame_counts.append(test_frame_count)
+
+    # Create the plot
+    plt.figure(figsize=(10, 6))
+    if log_scale:
+        plt.barh(centers, train_frame_counts, label='Train Frames', log=True)
+        plt.barh(centers, val_frame_counts, left=train_frame_counts, label='Val Frames', log=True)
+        plt.barh(centers, test_frame_counts, left=[sum(x) for x in zip(train_frame_counts, val_frame_counts)], label='Test Patients', log=True)
+    else:
+        plt.barh(centers, train_frame_counts, label='Train Frames')
+        plt.barh(centers, val_frame_counts, left=train_frame_counts, label='Val Frames')
+        plt.barh(centers, test_frame_counts, left=[sum(x) for x in zip(train_frame_counts, val_frame_counts)], label='Test Patients')
+
+    # Add labels and legend
+    plt.xlabel('Frame Count (Log Scale)' if log_scale else 'Frame Count')
+    plt.ylabel('Medical Center')
+    plt.title('Frame Distribution by Medical Center')
+    plt.legend()
+
+    # Show the plot
     plt.show()
 
-    # Plot the distribution of patients per center
-    train_patients = ds_info['train_patients_by_center']
-    val_patients = ds_info['val_patients_by_center']
-    test_patients = ds_info['test_patients_by_center']
 
-    train_values = [len(train_patients[center]) for center in centers]
-    val_values = [len(val_patients[center]) for center in centers]
-    test_values = [len(test_patients[center]) for center in centers]
+def plot_psplit_info(ds_info):
+    # Create data for the plot
+    centers = []
+    train_patient_counts = []
+    val_patient_counts = []
+    test_patient_counts = []
 
-    width = 0.3
-    x = range(len(centers))
+    for medical_center in ds_info['medical_center_patients'].keys():
+        centers.append(medical_center)
+        train_patient_count = len(ds_info['train_patients_by_center'][medical_center])
+        val_patient_count = len(ds_info['val_patients_by_center'][medical_center])
+        test_patient_count = len(ds_info['test_patients_by_center'][medical_center])
+        train_patient_counts.append(train_patient_count)
+        val_patient_counts.append(val_patient_count)
+        test_patient_counts.append(test_patient_count)
 
-    plt.figure(figsize=(12, 6))
-    plt.bar(x, train_values, width, label='Train set', align='center')
-    plt.bar([i + width for i in x], val_values, width, label='Val set', align='center')
-    plt.bar([i + 2 * width for i in x], test_values, width, label='Test set', align='center')
-    plt.title('Distribution of Patients per Medical Center')
-    plt.xlabel('Medical Center')
-    plt.ylabel('Number of Patients')
-    plt.yscale('log')
-    plt.xticks([i + width for i in x], centers, rotation=45, fontsize=8)
+    # Create the plot
+    plt.figure(figsize=(10, 6))
+    plt.barh(centers, train_patient_counts, label='Train Patients')
+    plt.barh(centers, val_patient_counts, left=train_patient_counts, label='Val Patients')
+    plt.barh(centers, test_patient_counts, left=[sum(x) for x in zip(train_patient_counts, val_patient_counts)], label='Test Patients')
+
+    # Add labels and legend
+    plt.xlabel('Patient Count')
+    plt.ylabel('Medical Center')
+    plt.title('Patient Distribution by Medical Center')
     plt.legend()
-    plt.show()    
+
+    # Show the plot
+    plt.show()

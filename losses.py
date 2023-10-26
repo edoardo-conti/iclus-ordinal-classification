@@ -3,6 +3,29 @@ import numpy as np
 from keras import backend as K
 import tensorflow as tf
 
+def ordinal_distance_loss(n_classes):
+    target_class = tf.ones((n_classes, n_classes - 1), dtype=tf.float32)
+    target_class = 1 - tf.linalg.band_part(target_class, 0, -1) 
+    '''
+    Example: target_class with num_classes = 4 -> (4, 3)
+    [
+        [0., 0., 0.],
+        [1., 0., 0.],
+        [1., 1., 0.],
+        [1., 1., 1.]
+    ]
+    '''
+    
+    mse = tf.keras.losses.MeanSquaredError(reduction=tf.keras.losses.Reduction.SUM)
+
+    def _ordinal_distance_loss(y_true, y_pred): 
+        indices = tf.argmax(y_true, axis=1)
+        y_true = tf.gather(target_class, indices)
+        
+        return mse(y_pred, y_true)
+
+    return _ordinal_distance_loss
+
 def make_cost_matrix(num_ratings):
 	"""
 	Create a quadratic cost matrix of num_ratings x num_ratings elements.

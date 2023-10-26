@@ -1,0 +1,25 @@
+[{
+    "ds_split_ratios": [0.6, 0.2, 0.2],
+    "ds_reduction": 0.05,
+    "nn_type": "obd",
+    "nn_batch_size": 8,
+    "nn_epochs": 2,
+    "nn_dropout": 0,
+    "obd_hidden_size": 512,
+    "loss": "ODL",
+    "metrics": ["ccr", "accuracy_oneoff", "mae", "ms"],
+    "optimizer": "Adam",
+    "learning_rate": 1e-3
+},
+{
+    "ds_split_ratios": [0.6, 0.2, 0.2],
+    "ds_reduction": 0.15,
+    "nn_type": "resnet18",
+    "nn_batch_size": 8,
+    "nn_epochs": 2,
+    "nn_dropout": 0,
+    "nn_activation": "relu",
+    "nn_final_activation": "poml",
+    "clm_use_tau": true
+    }
+]
