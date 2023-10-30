@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def print_split_diagnostic_info(ds_info):
-    # Print diagnostic information
+def print_split_ds_info(ds_info):
+    # Print textual split information
     for medical_center in ds_info['medical_center_patients'].keys():
         print(f"Medical Center: {medical_center}")
         print(f"  Frames in center: {ds_info['frames_by_center'][medical_center]}")
@@ -87,3 +87,41 @@ def plot_psplit_info(ds_info):
 
     # Show the plot
     plt.show()
+
+def plot_labels_distr(y_train_ds, y_val_ds, y_test_ds):
+    # Calcola il conteggio delle classi per ciascun set
+    class_counts_val = np.bincount(y_val_ds)
+    class_counts_test = np.bincount(y_test_ds)
+    class_counts_train = np.bincount(y_train_ds)
+
+    # Etichette delle classi (0, 1, 2, 3 in questo caso)
+    class_labels = np.arange(len(class_counts_val)).astype(int)
+
+    # Larghezza delle barre
+    bar_width = 0.2
+
+    # Posizioni delle barre per train, validation e test
+    bar_positions_train = class_labels - bar_width
+    bar_positions_val = class_labels
+    bar_positions_test = class_labels + bar_width
+
+    # Etichette per ciascun blocco di 3 barre
+    group_labels = np.arange(len(class_labels))
+
+    # Crea un istogramma per visualizzare la distribuzione delle classi per train, validation e test
+    plt.bar(bar_positions_train, class_counts_train, width=bar_width, label='Train')
+    plt.bar(bar_positions_val, class_counts_val, width=bar_width, label='Validation')
+    plt.bar(bar_positions_test, class_counts_test, width=bar_width, label='Test')
+    
+    # Aggiungi etichette e titolo
+    plt.xlabel('Gruppo di classi (0, 1, 2, 3)')
+    plt.ylabel('Numero di campioni')
+    plt.title('Distribuzione delle classi nei set di train, validation e test')
+
+    # Imposta le etichette dell'asse x
+    plt.xticks(group_labels, [0, 1, 2, 3])
+
+    # Mostra l'istogramma
+    plt.legend()  # Aggiungi la legenda
+    plt.show()
+ 

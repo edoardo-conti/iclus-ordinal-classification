@@ -99,16 +99,16 @@ class HDF5Dataset(Sequence):
         min_size = min(frame.shape[0], frame.shape[1])
         transform = A.Compose([
             # I. Elastic Warping 
-            A.ElasticTransform(alpha=150, sigma=10, alpha_affine=0.1, p=0.3),
+            A.ElasticTransform(alpha=100, sigma=10, alpha_affine=0.1, p=0.3),
             # II. Cropping
             A.RandomSizedCrop(min_max_height=(int(min_size * 0.7), min_size),
                               height=frame.shape[0], width=frame.shape[1], p=0.3),
             # III. Blurring
             A.GaussianBlur(blur_limit=(11, 21), p=0.3),
             # IV. Random rotation
-            A.Rotate(limit=(-23, 23), p=0.5),
+            A.Rotate(limit=(-23, 23), p=0.3),
             # V. Contrast distortion
-            A.RandomBrightnessContrast(brightness_limit=0.5, contrast_limit=0.5, p=0.5),
+            A.RandomBrightnessContrast(brightness_limit=0.5, contrast_limit=0.5, p=0.3),
         ])
 
         return transform(image=frame)['image']

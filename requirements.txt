@@ -3,9 +3,10 @@ matplotlib
 tqdm
 seaborn
 scikit-learn 
-albumentations
 keras 
+keras-vis
 tensorflow 
 tensorflow_probability 
 tensorflow-macos 
 tensorflow-metal
+albumentations

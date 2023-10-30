@@ -1,0 +1,4 @@
+experiment,ccr,acc_1off,mae,qwk
+exp_resnet18_8_10_0_CCE_SDG_0.01_1e-06_0.9,0.7612,0.9821,0.2567,0.8502
+exp_obd_resnet18_8_10_0_512_ODL_SDG_0.01_1e-06_0.9,0.8362,0.9991,0.1647,0.9026
+exp_clm_resnet18_8_10_0_logit_True_QWK_SGD_0.01_1e-06_0.9,0.581,0.9845,0.4345,0.8084
