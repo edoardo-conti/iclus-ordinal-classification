@@ -102,7 +102,7 @@ class Experiment:
 
     def load_results_csv(self):
         # setup the columns 
-        self.csv_columns = ["experiment", "ccr", "acc_1off", "mae", "qwk"]
+        self.csv_columns = ["experiment", "ccr", "mae", "ms", "rmse", "acc_1off", "spearman", "qwk"]
         # Check if the CSV file already exists
         if not os.path.exists(self.csv_results):
             # If the file does not exist, create it and write the header
@@ -299,7 +299,7 @@ class Experiment:
                 last_conv_layer = layer.name
                 break
         gradcam = GradCAMCallback(model, last_conv_layer, self.val_ds, freq=gradcam_freq)
-        
+
         if verbose:
                 print(f"[experiment] last model's convolutional layer extracted: {last_conv_layer} (will be used by Grad-CAM)\n")
 
@@ -404,7 +404,7 @@ class Experiment:
             self.metrics_results['experiment'] = self.exp_name
             # get the list of values to insert into the columns
             values_columns = [self.metrics_results.get(column, '-') for column in self.csv_columns]
-
+            
             # add data to CSV file
             with open(self.csv_results, mode='a', encoding='UTF-8', newline='') as csv_file:
                 writer = csv.writer(csv_file)
