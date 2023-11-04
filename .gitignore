@@ -1,3 +1,6 @@
 *.pyc
 *.bak*
 *.h5
+.DS_Store
+checkpoints/*
+launch_experiment_old.ipynb

@@ -6,23 +6,28 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 class GradCAMCallback(tf.keras.callbacks.Callback):
-    def __init__(self, model, layer_name, val_data, nsamples_per_class=1, freq=5):
+    def __init__(self, model, layer_name, val_data, num_classes=4, nsamples_per_class=1, freq=5):
         super(GradCAMCallback, self).__init__()
         self.model = model
         self.layer_name = layer_name
         self.val_data = val_data
         self.freq = freq
+        self.num_classes = num_classes
 
         # gather 'x' samples for each class
         self.samples_per_class = self.get_classes_samples(nsamples_per_class)
+
+        # compute target class for OBD
+        target_class = tf.ones((self.num_classes, self.num_classes - 1), dtype=tf.float32)
+        self.obd_target_class = 1 - tf.linalg.band_part(target_class, 0, -1) 
         
     def on_epoch_end(self, epoch, logs=None):
         if (epoch + 1) % self.freq == 0:
             images_with_gradcam = []
 
-            for _, sample in self.samples_per_class.items():
+            for label, sample in self.samples_per_class.items():
                 image_array = self.get_img_array(sample[0])
-                gradcam = self.make_gradcam_heatmap(image_array, self.model, self.layer_name)
+                gradcam = self.make_gradcam_heatmap(image_array, self.model, self.layer_name, pred_index=label)
                 gradcam_img_merged = self.merge_gradcam(sample[0], gradcam)
                 images_with_gradcam.append(gradcam_img_merged)
 
@@ -77,8 +82,16 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
         # with respect to the activations of the last conv layer
         with tf.GradientTape() as tape:
             last_conv_layer_output, preds = grad_model(img_array)
+
             if pred_index is None:
-                pred_index = tf.argmax(preds[0])
+                    pred_index = tf.argmax(preds[0])
+            
+            # TODO: think how to make Grad-CAM work with OBD
+            #       the problem is that Grad-CAM works with models that have 1 output
+            #       for each class, but ODB return n-1 probabilities (where n are the classes)
+            if self.model.name == 'obd' and pred_index == 3:
+                pred_index -= 1
+
             class_channel = preds[:, pred_index]
 
         # This is the gradient of the output neuron (top predicted or chosen)
@@ -105,6 +118,9 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
         # Load the original image
         #img = keras.utils.load_img(img_path)
         img = keras.utils.img_to_array(img)
+
+        # check nan presence
+        heatmap = np.nan_to_num(heatmap, nan=0)
 
         # Rescale heatmap to a range 0-255
         heatmap = np.uint8(255 * heatmap)

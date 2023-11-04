@@ -1,4 +1,6 @@
 import tensorflow as tf
+import tensorflow_probability as tfp
+import keras
 import numpy as np
 from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
@@ -15,7 +17,7 @@ class Metrics:
         target_class = tf.ones((self.num_classes, self.num_classes - 1), dtype=tf.float32)
 
         return 1 - tf.linalg.band_part(target_class, 0, -1) 
-        
+    
     def _check_nn_ytrue(self, y_true):
         if len(y_true.shape) > 1:
             y_true = tf.argmax(y_true, axis=-1) 
@@ -25,6 +27,7 @@ class Metrics:
     def _check_nn_ypred(self, y_pred):
         # handle the different network outputs
         if self.nn_type == 'obd':
+            # TODO: make sure if axis=2 is correct
             # Calculate pairwise distances between y_pred and target_class using Euclidean distance
             distances = tf.norm(tf.expand_dims(y_pred, 1) - self.target_class, axis=2, ord='euclidean')
             
@@ -33,6 +36,15 @@ class Metrics:
         else:
             y_pred = tf.argmax(y_pred, axis=-1) 
 
+        return y_pred
+
+    def _check_obd_ypred_probas(self, y_pred):
+        if self.nn_type == 'obd':
+            # Calculate pairwise distances between y_pred and target_class using Euclidean distance
+            distances = tf.norm(tf.expand_dims(y_pred, 1) - self.target_class, axis=2, ord='euclidean')
+            
+            y_pred = tf.nn.softmax(-distances)
+        
         return y_pred
 
     def ccr(self, y_true, y_pred):
@@ -76,6 +88,7 @@ class Metrics:
         y_true = self._check_nn_ytrue(y_true)
         y_pred = self._check_nn_ypred(y_pred)
         
+        # converting to int64 tensors
         y_true = tf.convert_to_tensor(y_true, dtype=tf.int64)
         y_pred = tf.convert_to_tensor(y_pred, dtype=tf.int64)
     
@@ -83,6 +96,19 @@ class Metrics:
         mean_absolute_error = tf.reduce_sum(absolute_errors) / tf.cast(tf.shape(y_true)[0], dtype=tf.int64)
     
         return mean_absolute_error
+
+    def rmse(self, y_true, y_pred):
+        # check the neural network ground truth and prediction
+        y_true = self._check_nn_ytrue(y_true)
+        y_pred = self._check_nn_ypred(y_pred)
+
+        # casting to float32
+        y_true = tf.cast(y_true, tf.float32)
+        y_pred = tf.cast(y_pred, tf.float32)
+
+        root_mean_squared_error = tf.sqrt(tf.reduce_mean(tf.square(y_true - y_pred)))
+
+        return root_mean_squared_error
 
     def acc_1off(self, y_true, y_pred):
         # check the neural network ground truth and prediction
@@ -99,7 +125,51 @@ class Metrics:
         accuracy_1off = tf.reduce_sum(correct) / tf.reduce_sum(conf_mat)
 
         return accuracy_1off
+
+    def top_2_acc(self, y_true, y_pred):
+        # convert the OBD output into probability for each class
+        y_pred = self._check_obd_ypred_probas(y_pred)
+
+        return keras.metrics.top_k_categorical_accuracy(y_true, y_pred, k=2)
+
+    def top_3_acc(self, y_true, y_pred):
+        # convert the OBD output into probability for each class
+        y_pred = self._check_obd_ypred_probas(y_pred)
+
+        return keras.metrics.top_k_categorical_accuracy(y_true, y_pred, k=3)
     
+    # Kendall rank correlation coefficient (Kendall's tau)
+    # TODO: cannot be computed if the predictions are all the same 
+    def kendall(self, y_true, y_pred):
+        # check the neural network ground truth and prediction
+        y_true = self._check_nn_ytrue(y_true)
+        y_pred = self._check_nn_ypred(y_pred)
+
+        # Calculate Kendall's tau correlation
+        corr = tfp.stats.kendalls_tau(y_true, y_pred)
+        
+        return corr
+
+    # Spearman rank correlation coefficient
+    def spearman(self, y_true, y_pred):
+        # check the neural network ground truth and prediction
+        y_true = self._check_nn_ytrue(y_true)
+        y_pred = self._check_nn_ypred(y_pred)
+
+        # float32 casting
+        y_true = tf.cast(y_true, tf.float32)
+        y_pred = tf.cast(y_pred, tf.float32)
+
+        y_mean = tf.reduce_mean(y_true)
+        ypred_mean = tf.reduce_mean(y_pred)
+
+        num = tf.reduce_sum((y_true - y_mean) * (y_pred - ypred_mean))
+        div = tf.sqrt(tf.reduce_sum(tf.square(y_true - y_mean)) * tf.reduce_sum(tf.square(y_pred - ypred_mean)))
+
+        result = tf.where(tf.math.equal(num, 0), 0.0, num / div)
+
+        return result
+
     def qwk(self, rater_a, rater_b, min_rating=0, max_rating=None):
         """
         Calculates the quadratic weighted kappa

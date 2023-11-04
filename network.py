@@ -188,7 +188,7 @@ class NeuralNetwork:
         obd_dense = self._obd_densenset(conv_net.output, self.obd_hidden_size)
         
         # build the keras neural network model
-        model = keras.models.Model(conv_net.input, obd_dense)
+        model = keras.models.Model(conv_net.input, obd_dense, name="obd")
         
         return model
     
@@ -207,7 +207,7 @@ class NeuralNetwork:
         x = CumulativeLinkModel(self.num_classes, self.clm_link_function, use_tau=self.use_tau)(x)
 
         # build the keras neural network model
-        model = keras.models.Model(conv_net.input, x)
+        model = keras.models.Model(conv_net.input, x, name="clm")
         
         return model
 
@@ -223,21 +223,21 @@ class NeuralNetwork:
         x = self.__nominal_final_activation(x)
 
         # build the keras neural network model
-        model = keras.models.Model(resnet18.input, x)
+        model = keras.models.Model(resnet18.input, x, name="resnet18")
 
         return model
 
-    def conv128(self):
+    def cnn128(self):
         cnn128 = self._cnn128_convnet(self.input_shape)
         x = cnn128.output
 
         # add the final layers
         x = self.__nominal_final_activation(x)
 
-        model = keras.models.Model(cnn128.input, x)
+        model = keras.models.Model(cnn128.input, x, name="cnn128")
         
         return model
-    
+        
     def vgg16(self):
         vgg16 = self._vgg16_convnet(self.input_shape)
         x = vgg16.output
@@ -245,6 +245,6 @@ class NeuralNetwork:
         # add the final layers
         x = self.__nominal_final_activation(x)
 
-        model = keras.models.Model(vgg16.input, x)
+        model = keras.models.Model(vgg16.input, x, name="vgg16")
         
         return model

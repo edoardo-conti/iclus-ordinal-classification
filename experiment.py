@@ -62,6 +62,7 @@ class Experiment:
         # =========================
         # ==== neural network =====
         # =========================
+        self.train_metrics_exl = ['top_2_acc', 'top_3_acc', 'ms', 'qwk', 'spearman']
         self.metrics_results = {}
 
     def build(self):
@@ -224,13 +225,13 @@ class Experiment:
             
             if verbose:
                 print(f"[experiment] '{net_type}' neural network built with:")
-                print(f"\n[experiment]\tdropout -> {dropout}\n")
+                print(f"[experiment]\tdropout -> {dropout}\n")
 
         model = net_object.build(net_type)
 
         return model
     
-    def nn_model_compile(self, model, train_metrics_exl=[], summary=False, verbose=True):
+    def nn_model_compile(self, model, summary=False, verbose=True):
         loss = self.settings['loss']
         metrics = self.settings['metrics']
         optimizer = self.settings['optimizer']
@@ -260,7 +261,7 @@ class Experiment:
 
         train_metrics = []
         for metric_name in metrics:
-            if metric_name not in train_metrics_exl:
+            if metric_name not in self.train_metrics_exl:
                 try:
                     metric = getattr(metrics_t, metric_name)
                 except AttributeError:
@@ -282,7 +283,7 @@ class Experiment:
         if summary:
             model.summary()
 
-    def nn_model_train(self, model, epoch_freq_gradcam=5, verbose=True):
+    def nn_model_train(self, model, gradcam_freq=5, verbose=True):
         # parameters
         epochs = self.settings['nn_epochs']
 
@@ -290,15 +291,15 @@ class Experiment:
         # saving the best model
         checkpoint = ModelCheckpoint(f'checkpoints/{self.exp_name}', save_weights_only=True, monitor='val_loss', verbose=1, save_best_only=True)
         
-        # GRAD-CAM
-        # auto-find the last convolutional layer of the model
+        # Grad-CAM
+        # auto-search the last convolutional layer of the model
         last_conv_layer = None
         for layer in reversed(model.layers):
             if isinstance(layer, tf.keras.layers.Conv2D):
                 last_conv_layer = layer.name
                 break
-        gradcam = GradCAMCallback(model, last_conv_layer, self.val_ds, freq=epoch_freq_gradcam)
-
+        gradcam = GradCAMCallback(model, last_conv_layer, self.val_ds, freq=gradcam_freq)
+        
         if verbose:
                 print(f"[experiment] last model's convolutional layer extracted: {last_conv_layer} (will be used by Grad-CAM)\n")
 
