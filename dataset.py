@@ -4,6 +4,8 @@ import pickle
 import random
 from collections import defaultdict
 import h5py
+from rich.console import Console
+from rich.markdown import Markdown
 import tensorflow as tf
 from keras.utils import Sequence, to_categorical
 from tqdm import tqdm
@@ -29,11 +31,14 @@ class RichHDF5Dataset(Sequence):
             pickle.dump(data, pickle_file)
 
     def elaborate_frameidx_map(self):
+        # console object to print using 'rich'
+        console = Console()
+
         # Try to load cached data
         cached_data = self.load_cached_data()
         if cached_data is not None:
             total_videos, total_frames, frame_index_map = cached_data
-            print(f"[dataset] {total_videos} videos ({total_frames} frames) loaded from cached data.")
+            console.print(f"{total_videos} videos ({total_frames} frames) loaded from cached data.\n")
         else:
             total_videos = 0
             max_frame_idx_end = 0
@@ -56,7 +61,7 @@ class RichHDF5Dataset(Sequence):
 
             # Save data to pickle file for future use
             self.save_cached_data((total_videos, total_frames, frame_index_map))
-            print(f"\n[dataset] {total_videos} videos ({total_frames} frames) loaded and cached.")
+            console.print(f"{total_videos} videos ({total_frames} frames) loaded and cached.\n")
 
         return total_videos, total_frames, frame_index_map
 

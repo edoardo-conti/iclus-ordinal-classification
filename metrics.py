@@ -269,7 +269,7 @@ class Metrics:
 
         return 1.0 - numerator / denominator
     
-    def confusion_matrix(self, y_true, y_pred):
+    def confusion_matrix(self, y_true, y_pred, show=True):
         # check the neural network ground truth and prediction
         y_true = self._check_nn_ytrue(y_true)
         y_pred = self._check_nn_ypred(y_pred)
@@ -281,4 +281,9 @@ class Metrics:
         ax.set_ylabel('actual')
         ax.set_xlabel('predicted')
         ax.set_title('Test Set Confusion Matrix')
-        plt.show()
+        
+        # Show the plot
+        if show:
+            plt.show()
+
+        return plt.gcf()

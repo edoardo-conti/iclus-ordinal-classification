@@ -1,6 +1,6 @@
 *.pyc
-*.bak*
 *.h5
+*bak*
 .DS_Store
-checkpoints/*
-launch_experiment_old.ipynb
+weights/*
+results/*

@@ -1,14 +1,17 @@
 import os
+import shutil
 import json
 import csv
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.utils.class_weight import compute_class_weight
+from rich.console import Console
+from rich.markdown import Markdown
 from keras import backend as K
 from keras.callbacks import ModelCheckpoint
 from dataset import RichHDF5Dataset, HDF5Dataset, split_strategy, reduce_sets
-from utilities import print_split_ds_info, plot_fsplit_info, plot_psplit_info, plot_labels_distr
+from utilities import print_split_ds_info, plot_frames_split, plot_patients_split, plot_labels_distr
 from network import NeuralNetwork
 from losses import make_cost_matrix, qwk_loss, ordinal_distance_loss
 from metrics import Metrics
@@ -17,25 +20,29 @@ from gradcam import GradCAMCallback
 class Experiment:
     def __init__(self, 
                  exps_json_path:str,
-                 exp_idx:int, 
                  dataset_path:str,
                  ds_map_pkl:str,
                  ds_split_pkl:str,
-                 csv_results:str,
-                 input_size:int = 224, 
-                 num_channels:int = 3, 
+                 results_dir:str,
+                 input_size:int = 224,
+                 num_channels:int = 3,
                  num_classes:int = 4,
                  random_state:int = 42):
+        self.exps_json_path = exps_json_path
         self.dataset_h5 = dataset_path
         self.ds_map_pkl = ds_map_pkl
         self.ds_split_pkl = ds_split_pkl
-        self.csv_results = csv_results
+        self.results_dir = results_dir
         self.seed = random_state
-        self.settings = self.load_json(exps_json_path)[exp_idx]
-        
-        # params to be computed by building the class
+
+        # params to be computed
+        self.settings = None
         self.exp_name = ''
+        self.csv_results_path = None
         self.csv_columns = []
+
+        # logging utilities
+        self.console = Console()
 
         # =========================
         # ======== dataset ========
@@ -62,17 +69,16 @@ class Experiment:
         # =========================
         # ==== neural network =====
         # =========================
-        self.train_metrics_exl = ['top_2_acc', 'top_3_acc', 'ms', 'qwk', 'spearman']
+        self.train_metrics_exl = ['top_2_acc', 'top_3_acc', 'qwk', 'spearman']
         self.metrics_results = {}
-
+    
     def build(self):
         self.check_hw_accel()
-        self.build_exp_name()
         self.load_dataset()
-        self.load_results_csv()
-        
+        self.init_results()
+    
     def load_json(self, json_file_path):
-        with open(json_file_path, 'r') as file:
+        with open(json_file_path, 'rb') as file:
             return json.load(file)
 
     def check_hw_accel(self, v=True):
@@ -84,40 +90,62 @@ class Experiment:
             tf.config.set_visible_devices([gpu,cpu])
             tf.config.experimental.set_memory_growth(gpu, True)
             if v:
-                print("[experiment] GPU acceleration available.")
+                self.console.print("[bold cyan]GPU[/bold cyan] acceleration available.")
         else:
             if v:
-                print(f"[experiment] no GPU acceleration available (devices: {tf.config.list_physical_devices()})")
+                self.console.print(f"no GPU acceleration available (devices: {tf.config.list_physical_devices()})")
     
+    def load_exp_settings(self, exp_idx):
+        # load the requested experiment settings by using the index to find it in the json file
+        self.settings = self.load_json(self.exps_json_path)[exp_idx]
+        
+        # build the experiment name based on the configuration extracted
+        self.exp_name = self.build_exp_name()
+
+        # create the experiment results subdirectory
+        self.results_dir = f"./results/{self.exp_name}"
+        if not os.path.exists(self.results_dir):
+            os.makedirs(self.results_dir)
+
+        return self.exp_name
+
     def build_exp_name(self, verbose=True):
         excl_params = ["ds_split_ratios", "ds_reduction", "metrics"]
         experiment_params = {key: value for key, value in self.settings.items() if key not in excl_params}
 
         # Generate the experiment name based on the parameters
-        self.exp_name = "exp_" + "_".join(str(value) for value in experiment_params.values())
+        exp_name = "exp_" + "_".join(str(value) for value in experiment_params.values())
 
-        if verbose:
-            print(f"[experiment] experiment name built from parameters: {self.exp_name}") 
+        #if verbose:
+            #print(f"[experiment] experiment name built from parameters: {self.exp_name}") 
 
+        return exp_name
+        
     def load_dataset(self):
         if self.dataset is None:
             self.dataset = RichHDF5Dataset(self.dataset_h5, self.ds_map_pkl)
 
-    def load_results_csv(self):
-        # setup the columns 
-        self.csv_columns = ["experiment", "ccr", "mae", "ms", "rmse", "acc_1off", "spearman", "qwk"]
-        # Check if the CSV file already exists
-        if not os.path.exists(self.csv_results):
-            # If the file does not exist, create it and write the header
-            with open(self.csv_results, mode='w', encoding='UTF-8', newline='') as csv_file:
-                writer = csv.writer(csv_file)
-                writer.writerow(self.csv_columns)
+    def init_results(self):
+        # clean the previous results and remake the directory
+        if os.path.exists(self.results_dir):
+            shutil.rmtree(self.results_dir)
+        os.makedirs(self.results_dir)
 
-    def split_dataset(self, aug_train_ds=True):
-        # Gathering the needed settings and data
-        split_ratios = self.settings['ds_split_ratios']
-        ds_reduction = self.settings['ds_reduction']
-        nn_batch_size = self.settings['nn_batch_size']
+        # declare the CSV file path
+        self.csv_results_path = os.path.join(self.results_dir, "results.csv")
+        # setup the columns for the CSV
+        self.csv_columns = ["experiment", "ccr", "mae", "ms", "rmse", "acc_1off", "spearman", "qwk"]
+        # create the CSV file and write the header
+        with open(self.csv_results_path, mode='w', encoding='UTF-8', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(self.csv_columns)
+
+    def split_dataset(self, split_ratios=None, ds_reduction=None):
+        # Gathering the needed settings and data if not provided
+        if split_ratios is None:
+            split_ratios = self.settings['ds_split_ratios']
+        if ds_reduction is None:
+            ds_reduction = self.settings['ds_reduction']
 
         # Splitting the dataset into train, (validation) and test sets
         self.train_idxs, self.val_idxs, self.test_idxs, self.ds_infos = split_strategy(self.dataset, 
@@ -131,12 +159,16 @@ class Experiment:
                                                                 self.val_idxs, 
                                                                 self.test_idxs, 
                                                                 ds_reduction)
-        
+    
+    def generate_sets(self, aug_train_ds=True):
+        # Gathering the needed settings and data
+        nn_batch_size = self.settings['nn_batch_size']
+
         # Create the train, (val) and test sets to feed the neural networks
         self.train_ds = HDF5Dataset(self.dataset, self.train_idxs, nn_batch_size, augmentation=aug_train_ds)
         self.val_ds = HDF5Dataset(self.dataset, self.val_idxs, nn_batch_size)
         self.test_ds = HDF5Dataset(self.dataset, self.test_idxs, nn_batch_size)
-    
+
     def compute_class_weight(self, v=True):
         if self.ds_infos is not None:
             # Retrieves the dataset's labels
@@ -161,23 +193,41 @@ class Experiment:
             self.train_class_weights = train_class_weight_dict
         else:
             raise Exception('[experiment] dataset not yet splitted.')
-
-    def plot_split_charts(self, splitinfo=True, fdistr=True, pdistr=True, ldistr=True):
+    
+    def generate_split_charts(self, charts_to_generate=None, show=False, save=False, save_path="results", exp_name=None):
         if self.ds_infos is not None:
-            if splitinfo:
-                print_split_ds_info(self.ds_infos)
+            if charts_to_generate is None:
+                charts_to_generate = ["fdistr", "pdistr", "ldistr"]
 
-            if fdistr:
-                plot_fsplit_info(self.ds_infos, log_scale=True)
+            if save and exp_name is not None:
+                save_path = f"./results/{exp_name}"
                 
-            if pdistr:
-                plot_psplit_info(self.ds_infos)
+            if "splitinfo" in charts_to_generate:
+                print_split_ds_info(self.ds_infos)
+            
+            if "fdistr" in charts_to_generate:
+                pfs = plot_frames_split(self.ds_infos, log_scale=True, show=show)
+                if save:
+                    chart_file_path = os.path.join(save_path, "frames_split.png")
+                    pfs.savefig(chart_file_path)
+                    plt.close()
 
-            if ldistr:
-                plot_labels_distr(self.y_train_ds, self.y_val_ds, self.y_test_ds)
+            if "pdistr" in charts_to_generate:
+                pps = plot_patients_split(self.ds_infos, show=show)
+                if save:
+                    chart_file_path = os.path.join(save_path, "patient_split.png")
+                    pps.savefig(chart_file_path)
+                    plt.close()
+
+            if "ldistr" in charts_to_generate:
+                pld = plot_labels_distr(self.y_train_ds, self.y_val_ds, self.y_test_ds, show=show)
+                if save:
+                    chart_file_path = os.path.join(save_path, "labels_distribution.png")
+                    pld.savefig(chart_file_path)
+                    plt.close()
             
         else:
-            raise Exception('[experiment] dataset not yet splitted.')
+            raise Exception('dataset not yet splitted.')
 
     def nn_model_build(self, verbose=True):
         net_type = self.settings['nn_type']
@@ -286,13 +336,13 @@ class Experiment:
         if summary:
             model.summary()
 
-    def nn_model_train(self, model, gradcam_freq=5, verbose=True):
+    def nn_model_train(self, model, gradcam_freq=5, gradcam_show=False, fit_verbose=1, verbose=True):
         # parameters
         epochs = self.settings['nn_epochs']
 
         # callbacks
         # saving the best model
-        checkpoint = ModelCheckpoint(f'checkpoints/{self.exp_name}', save_weights_only=True, monitor='val_loss', verbose=1, save_best_only=True)
+        checkpoint = ModelCheckpoint(f'weights/{self.exp_name}', save_weights_only=True, monitor='val_loss', verbose=1, save_best_only=True)
         
         # Grad-CAM
         # auto-search the last convolutional layer of the model
@@ -301,7 +351,15 @@ class Experiment:
             if isinstance(layer, tf.keras.layers.Conv2D):
                 last_conv_layer = layer.name
                 break
-        gradcam = GradCAMCallback(model, last_conv_layer, self.val_ds, freq=gradcam_freq)
+        gradcams_dir_path = os.path.join(self.results_dir, "gradcams/")
+        if not os.path.exists(gradcams_dir_path):
+            os.makedirs(gradcams_dir_path)
+        gradcam = GradCAMCallback(model, last_conv_layer, self.val_ds, freq=gradcam_freq, show_cams=gradcam_show, save_cams=gradcams_dir_path)
+
+        if gradcam_freq > 0:
+            callbacks = [checkpoint, gradcam]
+        else:
+            callbacks = [checkpoint]
 
         if verbose:
                 print(f"[experiment] last model's convolutional layer extracted: {last_conv_layer} (will be used by Grad-CAM)\n")
@@ -312,12 +370,13 @@ class Experiment:
                             epochs=epochs,
                             class_weight=self.train_class_weights,
                             validation_data=self.val_ds,
-                            callbacks=[checkpoint, gradcam]
+                            callbacks=callbacks,
+                            verbose=fit_verbose
                             )
         
         return history
     
-    def nn_train_graphs(self, history):
+    def nn_train_graphs(self, history, show=True, save=False):
         # Create a figure with two subplots
         _, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -353,12 +412,19 @@ class Experiment:
         ax2.grid()
 
         # Show the figure
-        plt.show()
+        if show:
+            plt.show()
 
-    def nn_model_evaluate(self, model, load_best_weights=True, cf_mat=True, save_on_csv=True, v=True):       
+        if save:
+            train_graphs_path = os.path.join(self.results_dir, "train_graphs.png")
+            plt.savefig(train_graphs_path)
+        
+        plt.close()
+
+    def nn_model_evaluate(self, model, load_best_weights=True, show_cfmat=True, save_cfmat=False, v=True):       
         # Load the best weights
         if load_best_weights:
-            model.load_weights(f'checkpoints/{self.exp_name}')
+            model.load_weights(f'weights/{self.exp_name}')
 
             if v:
                 print(f'[experiment] best model weights loaded.')
@@ -398,19 +464,21 @@ class Experiment:
                 pass
         
         # Test Set Confusion Matrix
-        if cf_mat:
-            metrics_e.confusion_matrix(self.y_test_ds, y_test_pred)
+        cfmat_fig = metrics_e.confusion_matrix(self.y_test_ds, y_test_pred, show=show_cfmat)
+        if save_cfmat:
+            cfmat_fig_path = os.path.join(self.results_dir, "confusion_matrix.png")
+            cfmat_fig.savefig(cfmat_fig_path)
+        plt.close()
 
-        # Save results on the csv if requested
-        if save_on_csv:
-            # add the experiment name to the result dictionary
-            self.metrics_results['experiment'] = self.exp_name
-            # get the list of values to insert into the columns
-            values_columns = [self.metrics_results.get(column, '-') for column in self.csv_columns]
-            
-            # add data to CSV file
-            with open(self.csv_results, mode='a', encoding='UTF-8', newline='') as csv_file:
-                writer = csv.writer(csv_file)
-                writer.writerow(values_columns)
+        # Save results on the csv
+        # add the experiment name to the result dictionary
+        self.metrics_results['experiment'] = self.exp_name
+        # get the list of values to insert into the columns
+        values_columns = [self.metrics_results.get(column, '-') for column in self.csv_columns]
+        
+        # add data to CSV file
+        with open(self.csv_results_path, mode='a', encoding='UTF-8', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(values_columns)
 
-            print(f"[experiment] experiment results saved on the csv file: {self.csv_results}")
+        print(f"[experiment] experiment results saved on the csv file: {self.csv_results_path}")

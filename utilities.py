@@ -20,7 +20,7 @@ def print_split_ds_info(ds_info):
             print(f"   {patient}: {frame_count} frames")
 
 
-def plot_fsplit_info(ds_info, log_scale=False):
+def plot_frames_split(ds_info, log_scale=False, show=False):
     # Create data for the plot
     centers = []
     train_frame_counts = []
@@ -54,10 +54,13 @@ def plot_fsplit_info(ds_info, log_scale=False):
     plt.legend()
 
     # Show the plot
-    plt.show()
+    if show:
+        plt.show()
+
+    return plt.gcf()
 
 
-def plot_psplit_info(ds_info):
+def plot_patients_split(ds_info, show=False):
     # Create data for the plot
     centers = []
     train_patient_counts = []
@@ -79,49 +82,47 @@ def plot_psplit_info(ds_info):
     plt.barh(centers, val_patient_counts, left=train_patient_counts, label='Val Patients')
     plt.barh(centers, test_patient_counts, left=[sum(x) for x in zip(train_patient_counts, val_patient_counts)], label='Test Patients')
 
-    # Add labels and legend
+    # Add labels, title and legend
     plt.xlabel('Patient Count')
     plt.ylabel('Medical Center')
     plt.title('Patient Distribution by Medical Center')
     plt.legend()
 
     # Show the plot
-    plt.show()
+    if show:
+        plt.show()
+    
+    return plt.gcf()
 
-def plot_labels_distr(y_train_ds, y_val_ds, y_test_ds):
-    # Calcola il conteggio delle classi per ciascun set
+def plot_labels_distr(y_train_ds, y_val_ds, y_test_ds, show=False):
+    # calculate the class count for each set
     class_counts_val = np.bincount(y_val_ds)
     class_counts_test = np.bincount(y_test_ds)
     class_counts_train = np.bincount(y_train_ds)
 
-    # Etichette delle classi (0, 1, 2, 3 in questo caso)
     class_labels = np.arange(len(class_counts_val)).astype(int)
-
-    # Larghezza delle barre
+    group_labels = np.arange(len(class_labels))
     bar_width = 0.2
 
-    # Posizioni delle barre per train, validation e test
     bar_positions_train = class_labels - bar_width
     bar_positions_val = class_labels
     bar_positions_test = class_labels + bar_width
 
-    # Etichette per ciascun blocco di 3 barre
-    group_labels = np.arange(len(class_labels))
-
-    # Crea un istogramma per visualizzare la distribuzione delle classi per train, validation e test
+    # Create the plot
     plt.bar(bar_positions_train, class_counts_train, width=bar_width, label='Train')
     plt.bar(bar_positions_val, class_counts_val, width=bar_width, label='Validation')
     plt.bar(bar_positions_test, class_counts_test, width=bar_width, label='Test')
     
-    # Aggiungi etichette e titolo
+    # Add labels, title and legend
     plt.xlabel('Gruppo di classi (0, 1, 2, 3)')
     plt.ylabel('Numero di campioni')
     plt.title('Distribuzione delle classi nei set di train, validation e test')
-
-    # Imposta le etichette dell'asse x
     plt.xticks(group_labels, [0, 1, 2, 3])
+    plt.legend()  
 
-    # Mostra l'istogramma
-    plt.legend()  # Aggiungi la legenda
-    plt.show()
+    # Show the plot
+    if show:
+        plt.show()
+    
+    return plt.gcf()
  

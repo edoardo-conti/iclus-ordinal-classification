@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import tensorflow as tf
 import keras 
@@ -6,13 +7,23 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 class GradCAMCallback(tf.keras.callbacks.Callback):
-    def __init__(self, model, layer_name, val_data, num_classes=4, nsamples_per_class=1, freq=5):
+    def __init__(self, 
+                 model, 
+                 layer_name, 
+                 val_data, 
+                 num_classes=4, 
+                 nsamples_per_class=1, 
+                 freq=5, 
+                 show_cams=True,
+                 save_cams=None):
         super(GradCAMCallback, self).__init__()
         self.model = model
         self.layer_name = layer_name
         self.val_data = val_data
-        self.freq = freq
         self.num_classes = num_classes
+        self.freq = freq
+        self.show_cams = show_cams
+        self.save_cams = save_cams
 
         # gather 'x' samples for each class
         self.samples_per_class = self.get_classes_samples(nsamples_per_class)
@@ -39,7 +50,14 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
                 ax.set_title(f"class {i}")
                 #ax.axis('off')
 
-            plt.show()
+            if self.show_cams:
+                plt.show()
+            
+            if self.save_cams is not None:
+                current_gradcam_path = os.path.join(self.save_cams, f"gradcam_epoch_{epoch}.png")
+                plt.savefig(current_gradcam_path)
+            
+            plt.close()
 
     def get_classes_samples(self, nsamples_per_class=1):
         # Dizionario per tenere traccia dei campioni estratti per ciascuna classe
