@@ -76,7 +76,7 @@ class Experiment:
             return json.load(file)
 
     def check_hw_accel(self, v=True):
-        gpu = len(tf.config.list_physical_devices('GPU'))>0
+        gpu = len(tf.config.list_physical_devices('GPU')) > 0
         if gpu: 
             # Set the device to GPU 
             cpu = tf.config.list_physical_devices('CPU')[0]
@@ -85,6 +85,9 @@ class Experiment:
             tf.config.experimental.set_memory_growth(gpu, True)
             if v:
                 print("[experiment] GPU acceleration available.")
+        else:
+            if v:
+                print(f"[experiment] no GPU acceleration available (devices: {tf.config.list_physical_devices()})")
     
     def build_exp_name(self, verbose=True):
         excl_params = ["ds_split_ratios", "ds_reduction", "metrics"]
