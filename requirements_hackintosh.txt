@@ -1,0 +1,11 @@
+rich
+tqdm
+h5py
+keras
+matplotlib
+scikit-learn
+seaborn
+albumentations
+tensorflow==2.13.0
+tensorflow-metal
+tensorflow-probability==0.21.0
