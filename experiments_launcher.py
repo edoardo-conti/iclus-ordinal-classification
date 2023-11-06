@@ -102,13 +102,13 @@ def main():
             experiment.nn_model_compile(model, summary=False)
             
             # train the neural network model
-            history = experiment.nn_model_train(model, gradcam_freq=1, fit_verbose=0)
+            history = experiment.nn_model_train(model, gradcam_freq=5, fit_verbose=0)
 
             # plot training graphs
             experiment.nn_train_graphs(history, show=False, save=True)
 
             # evaluating the neural network model
-            experiment.nn_model_evaluate(model, show_cfmat=False, save_cfmat=True)
+            experiment.nn_model_evaluate(model, show_cfmat=False, save_cfmat=True, eval_verbose=0)
 
             # small time sleep
             sleep(1)

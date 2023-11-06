@@ -154,7 +154,7 @@ class Experiment:
                                                                         rseed=self.seed)
         
         # Reduce the dataset size if requested
-        if ds_reduction > 0:
+        if ds_reduction < 1.0:
             self.train_idxs, self.val_idxs, self.test_idxs = reduce_sets(self.train_idxs, 
                                                                 self.val_idxs, 
                                                                 self.test_idxs, 
@@ -421,7 +421,7 @@ class Experiment:
         
         plt.close()
 
-    def nn_model_evaluate(self, model, load_best_weights=True, show_cfmat=True, save_cfmat=False, v=True):       
+    def nn_model_evaluate(self, model, load_best_weights=True, show_cfmat=True, save_cfmat=False, v=True, eval_verbose=2):       
         # Load the best weights
         if load_best_weights:
             model.load_weights(f'weights/{self.exp_name}')
@@ -430,10 +430,10 @@ class Experiment:
                 print(f'[experiment] best model weights loaded.')
 
         # TODO: check if evaluate give same results as manual metrics computing
-        model.evaluate(self.test_ds)
+        model.evaluate(self.test_ds, verbose=eval_verbose)
 
         # get the predictions by running the model inference
-        y_test_pred = model.predict(self.test_ds)
+        y_test_pred = model.predict(self.test_ds, verbose=eval_verbose)
 
         # compute the evaluation metrics
         metrics_e = Metrics(self.ds_num_classes, self.settings['nn_type'], 'eval')

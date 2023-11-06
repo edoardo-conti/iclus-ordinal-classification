@@ -159,7 +159,7 @@ class NeuralNetwork:
         xs = [dense_sigmoid(output(xc))[:, 0] for output, xc in zip(dense_output, xs)]
         
         out = tf.concat([tf.expand_dims(xc, axis=1) for xc in xs], axis=1)
-
+        
         #obd_densenet = keras.Model(x, out, name="obd_densenet")
 
         return out

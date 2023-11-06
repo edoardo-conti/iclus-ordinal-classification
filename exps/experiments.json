@@ -1,25 +1,11 @@
-[
+[   
 {
     "ds_split_ratios": [0.6, 0.2, 0.2],
-    "ds_reduction": 0.01,
-    "nn_type": "resnet18",
-    "nn_batch_size": 8,
-    "nn_epochs": 1,
-    "nn_dropout": 0,
-    "loss": "CCE",
-    "metrics": ["ccr", "mae", "ms", "rmse", "acc_1off", "spearman", "qwk"],
-    "optimizer": "SDG",
-    "learning_rate": 1e-2,
-    "weight_decay": 1e-6,
-    "momentum": 0.9
-},    
-{
-    "ds_split_ratios": [0.6, 0.2, 0.2],
-    "ds_reduction": 0.01,
+    "ds_reduction": 0.3,
     "nn_type": "obd",
     "nn_backbone": "resnet18",
     "nn_batch_size": 8,
-    "nn_epochs": 1,
+    "nn_epochs": 20,
     "nn_dropout": 0,
     "obd_hidden_size": 512,
     "loss": "ODL",
@@ -31,11 +17,11 @@
 },
 {
     "ds_split_ratios": [0.6, 0.2, 0.2],
-    "ds_reduction": 0.01,
+    "ds_reduction": 0.3,
     "nn_type": "clm",
     "nn_backbone": "resnet18",
     "nn_batch_size": 8,
-    "nn_epochs": 1,
+    "nn_epochs": 20,
     "nn_dropout": 0,
     "clm_link_function": "logit",
     "clm_use_tau": true,
@@ -45,4 +31,19 @@
     "learning_rate": 1e-2,
     "weight_decay": 1e-6,
     "momentum": 0.9
-}]
+},
+{
+    "ds_split_ratios": [0.6, 0.2, 0.2],
+    "ds_reduction": 0.3,
+    "nn_type": "resnet18",
+    "nn_batch_size": 8,
+    "nn_epochs": 20,
+    "nn_dropout": 0,
+    "loss": "CCE",
+    "metrics": ["ccr", "mae", "ms", "rmse", "acc_1off", "spearman", "qwk"],
+    "optimizer": "SDG",
+    "learning_rate": 1e-2,
+    "weight_decay": 1e-6,
+    "momentum": 0.9
+}
+]
