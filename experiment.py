@@ -341,7 +341,7 @@ class Experiment:
         
         # callbacks list
         callbacks = [checkpoint, early_stop, reduce_lr] + [gradcam] * (gradcam_freq > 0)
-
+        
         # neural network fit
         history = model.fit(self.train_ds, 
                             shuffle=True,
@@ -350,7 +350,9 @@ class Experiment:
                             validation_data=self.val_ds,
                             callbacks=callbacks,
                             verbose=fit_verbose,
-                            workers=num_workers
+                            max_queue_size=512,
+                            workers=num_workers,
+                            use_multiprocessing=False
                             )
         
         return history

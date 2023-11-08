@@ -88,53 +88,53 @@ def main():
     
     with console.status("[bold green]Starting...\n") as status:
         for exp_idx, _ in enumerate(experiments):
-            # load the experiment settings
-            exp_name = experiment.load_exp_settings(exp_idx)    
-            nn_model = experiment.settings['nn_type'].upper()
+            try:
+                # load the experiment settings
+                exp_name = experiment.load_exp_settings(exp_idx)    
+                nn_model = experiment.settings['nn_type'].upper()
 
-            # update the console status
-            # status.update(f"[bold green]Running experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
+                # update the console status
+                # status.update(f"[bold green]Running experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
 
-            # perform the dataset splitting and computing the class weight if not done before
-            if not same_ds_splitting:
-                experiment.split_dataset()
-                experiment.compute_class_weight()
-                experiment.generate_split_charts(save=True, exp_name=exp_name)
-                logger.print_ds_splitting()
+                # perform the dataset splitting and computing the class weight if not done before
+                if not same_ds_splitting:
+                    experiment.split_dataset()
+                    experiment.compute_class_weight()
+                    experiment.generate_split_charts(save=True, exp_name=exp_name)
+                    logger.print_ds_splitting()
+                
+                # generate the train, val and test sets based on the batch size
+                experiment.generate_sets()
+                
+                # build the neural network model using the current experiment settings
+                model = experiment.nn_model_build()
+
+                # compile the neural network model using the current experiment settings
+                experiment.nn_model_compile(model, summary=False)
+                
+                # logging the current experiment's model
+                logger.update_experiment(experiment)
+                #logger.print_model_params()
+
+                # update the console status
+                status.update(f"[bold green]Training model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
+
+                # train the neural network model
+                history = experiment.nn_model_train(model, gradcam_freq=5, num_workers=args.workers, fit_verbose=args.verbose)
+                
+                # plot training graphs
+                experiment.nn_train_graphs(history, show=False, save=True)
+
+                # update the console status
+                status.update(f"[bold green]Evaluating model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
+
+                # evaluating the neural network model
+                experiment.nn_model_evaluate(model, show_cfmat=False, save_cfmat=True, eval_verbose=args.verbose)
             
-            # generate the train, val and test sets based on the batch size
-            experiment.generate_sets()
-            
-            # build the neural network model using the current experiment settings
-            model = experiment.nn_model_build()
-
-            # compile the neural network model using the current experiment settings
-            experiment.nn_model_compile(model, summary=False)
-            
-            # logging the current experiment's model
-            logger.update_experiment(experiment)
-            #logger.print_model_params()
-
-            # update the console status
-            status.update(f"[bold green]Training model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
-            
-            # train the neural network model
-            history = experiment.nn_model_train(model, gradcam_freq=5, num_workers=args.workers, fit_verbose=args.verbose)
-            
-            # plot training graphs
-            experiment.nn_train_graphs(history, show=False, save=True)
-
-            # update the console status
-            status.update(f"[bold green]Evaluating model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
-
-            # evaluating the neural network model
-            experiment.nn_model_evaluate(model, show_cfmat=False, save_cfmat=True, eval_verbose=args.verbose)
-
-            # small time sleep
-            sleep(1)
-
-            # logging the end of the current experiment
-            console.log(f"experiment [bold cyan]{exp_name}[/bold cyan] completed [{exp_idx + 1}/{tot_exps}]")
+                # logging the end of the current experiment
+                console.log(f"experiment [bold cyan]{exp_name}[/bold cyan] [bold green]completed[/bold green] [{exp_idx + 1}/{tot_exps}]")
+            except Exception as e:
+                console.log(f"experiment [bold cyan]{exp_name}[/bold cyan] [bold red]aborted[/bold red] [{exp_idx + 1}/{tot_exps}] : {str(e)}")
 
 if __name__ == "__main__":
     main()

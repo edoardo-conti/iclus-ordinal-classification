@@ -83,7 +83,7 @@ class HDF5Dataset(Sequence):
         self.dataset_indexes = indexes
         self.batch_size = batch_size
         self.augmentation = augmentation
-        self.resize_size = (224, 224)
+        self.resize_size = [224, 224]
     
     def __len__(self):
         num_samples = len(self.dataset_indexes)
