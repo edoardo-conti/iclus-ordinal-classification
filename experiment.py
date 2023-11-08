@@ -120,7 +120,7 @@ class Experiment:
     def build_exp_name(self):
         excl_params = ["ds_split_ratios", "ds_reduction", "metrics"]
         experiment_params = {key: value for key, value in self.settings.items() if key not in excl_params}
-        
+
         # Generate the experiment name based on the parameters
         exp_name = "_".join(str(value) for value in experiment_params.values())
 
@@ -319,7 +319,7 @@ class Experiment:
         if summary:
             model.summary()
 
-    def nn_model_train(self, model, gradcam_freq=5, gradcam_show=False, fit_verbose=1):
+    def nn_model_train(self, model, gradcam_freq=5, gradcam_show=False, num_workers=1, fit_verbose=1):
         # parameters
         epochs = self.settings['nn_epochs']
         
@@ -349,7 +349,8 @@ class Experiment:
                             class_weight=self.train_class_weights,
                             validation_data=self.val_ds,
                             callbacks=callbacks,
-                            verbose=fit_verbose
+                            verbose=fit_verbose,
+                            workers=num_workers
                             )
         
         return history

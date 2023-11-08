@@ -45,6 +45,7 @@ def main():
     parser.add_argument("--ds_map", type=str, required=True, help="pickle containing the dataset frames indexes mapping")
     parser.add_argument("--ds_split", type=str, required=True, help="pickle containing the dataset infos needed for the splitting")
     parser.add_argument("--results_dir", type=str, default="results/", help="directory used to store the results")
+    parser.add_argument("--workers", type=int, default=1, help="verbose intensity for the entire session")
     parser.add_argument("--verbose", type=int, default=0, help="verbose intensity for the entire session")
     parser.add_argument("--seed", type=int, default=42, help="random seed")
     args = parser.parse_args()
@@ -116,9 +117,9 @@ def main():
 
             # update the console status
             status.update(f"[bold green]Training model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
-
+            
             # train the neural network model
-            history = experiment.nn_model_train(model, gradcam_freq=5, fit_verbose=args.verbose)
+            history = experiment.nn_model_train(model, gradcam_freq=5, num_workers=args.workers, fit_verbose=args.verbose)
             
             # plot training graphs
             experiment.nn_train_graphs(history, show=False, save=True)
