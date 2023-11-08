@@ -6,10 +6,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.utils.class_weight import compute_class_weight
+from rich import print
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.layout import Layout
+from rich.table import Table
 from keras import backend as K
-from keras.callbacks import ModelCheckpoint
+from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from dataset import RichHDF5Dataset, HDF5Dataset, split_strategy, reduce_sets
 from utilities import print_split_ds_info, plot_frames_split, plot_patients_split, plot_labels_distr
 from network import NeuralNetwork
@@ -36,8 +40,10 @@ class Experiment:
         self.seed = random_state
 
         # params to be computed
+        self.hw_accel = False
         self.settings = None
         self.exp_name = ''
+        self.exp_results_subdir = None
         self.csv_results_path = None
         self.csv_columns = []
 
@@ -69,10 +75,14 @@ class Experiment:
         # =========================
         # ==== neural network =====
         # =========================
+        self.last_conv_layer = None
         self.train_metrics_exl = ['top_2_acc', 'top_3_acc', 'qwk', 'spearman']
         self.metrics_results = {}
     
     def build(self):
+        # setting os environment
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+
         self.check_hw_accel()
         self.load_dataset()
         self.init_results()
@@ -81,20 +91,18 @@ class Experiment:
         with open(json_file_path, 'rb') as file:
             return json.load(file)
 
-    def check_hw_accel(self, v=True):
-        gpu = len(tf.config.list_physical_devices('GPU')) > 0
-        if gpu: 
-            # Set the device to GPU 
+    def check_hw_accel(self):
+        gpu_count = len(tf.config.list_physical_devices('GPU')) > 0
+        if gpu_count: 
+            # Set the device to GPU 0
             cpu = tf.config.list_physical_devices('CPU')[0]
             gpu = tf.config.list_physical_devices('GPU')[0]
             tf.config.set_visible_devices([gpu,cpu])
             tf.config.experimental.set_memory_growth(gpu, True)
-            if v:
-                self.console.print("[bold cyan]GPU[/bold cyan] acceleration available.")
-        else:
-            if v:
-                self.console.print(f"no GPU acceleration available (devices: {tf.config.list_physical_devices()})")
-    
+
+            # set the class attribute regarding the hw acceleration 
+            self.hw_accel = True
+       
     def load_exp_settings(self, exp_idx):
         # load the requested experiment settings by using the index to find it in the json file
         self.settings = self.load_json(self.exps_json_path)[exp_idx]
@@ -103,21 +111,18 @@ class Experiment:
         self.exp_name = self.build_exp_name()
 
         # create the experiment results subdirectory
-        self.results_dir = f"./results/{self.exp_name}"
-        if not os.path.exists(self.results_dir):
-            os.makedirs(self.results_dir)
+        self.exp_results_subdir = os.path.join(self.results_dir, self.exp_name)
+        if not os.path.exists(self.exp_results_subdir):
+            os.makedirs(self.exp_results_subdir)
 
         return self.exp_name
 
-    def build_exp_name(self, verbose=True):
+    def build_exp_name(self):
         excl_params = ["ds_split_ratios", "ds_reduction", "metrics"]
         experiment_params = {key: value for key, value in self.settings.items() if key not in excl_params}
-
+        
         # Generate the experiment name based on the parameters
-        exp_name = "exp_" + "_".join(str(value) for value in experiment_params.values())
-
-        #if verbose:
-            #print(f"[experiment] experiment name built from parameters: {self.exp_name}") 
+        exp_name = "_".join(str(value) for value in experiment_params.values())
 
         return exp_name
         
@@ -149,17 +154,17 @@ class Experiment:
 
         # Splitting the dataset into train, (validation) and test sets
         self.train_idxs, self.val_idxs, self.test_idxs, self.ds_infos = split_strategy(self.dataset, 
-                                                                        ratios=split_ratios, 
-                                                                        pkl_file=self.ds_split_pkl, 
-                                                                        rseed=self.seed)
+                                                                                        ratios=split_ratios, 
+                                                                                        pkl_file=self.ds_split_pkl, 
+                                                                                        rseed=self.seed)
         
         # Reduce the dataset size if requested
         if ds_reduction < 1.0:
             self.train_idxs, self.val_idxs, self.test_idxs = reduce_sets(self.train_idxs, 
-                                                                self.val_idxs, 
-                                                                self.test_idxs, 
-                                                                ds_reduction)
-    
+                                                                            self.val_idxs, 
+                                                                            self.test_idxs, 
+                                                                            ds_reduction)
+
     def generate_sets(self, aug_train_ds=True):
         # Gathering the needed settings and data
         nn_batch_size = self.settings['nn_batch_size']
@@ -169,7 +174,7 @@ class Experiment:
         self.val_ds = HDF5Dataset(self.dataset, self.val_idxs, nn_batch_size)
         self.test_ds = HDF5Dataset(self.dataset, self.test_idxs, nn_batch_size)
 
-    def compute_class_weight(self, v=True):
+    def compute_class_weight(self):
         if self.ds_infos is not None:
             # Retrieves the dataset's labels
             ds_labels = self.ds_infos['labels']
@@ -181,18 +186,12 @@ class Experiment:
 
             # Calculate class balance using 'compute_class_weight'
             train_class_weights = compute_class_weight('balanced', 
-                                                 classes=np.unique(self.y_train_ds), 
-                                                 y=self.y_train_ds)
+                                                        classes=np.unique(self.y_train_ds), 
+                                                        y=self.y_train_ds)
 
-            # Create a dictionary that maps classes to their weights
-            train_class_weight_dict = dict(enumerate(train_class_weights))
-
-            if v:
-                print("[experiment] class weights: ", train_class_weight_dict)
-
-            self.train_class_weights = train_class_weight_dict
+            self.train_class_weights = dict(enumerate(train_class_weights))
         else:
-            raise Exception('[experiment] dataset not yet splitted.')
+            raise Exception('dataset not yet splitted.')
     
     def generate_split_charts(self, charts_to_generate=None, show=False, save=False, save_path="results", exp_name=None):
         if self.ds_infos is not None:
@@ -229,7 +228,7 @@ class Experiment:
         else:
             raise Exception('dataset not yet splitted.')
 
-    def nn_model_build(self, verbose=True):
+    def nn_model_build(self):
         net_type = self.settings['nn_type']
         dropout = self.settings['nn_dropout']
 
@@ -243,12 +242,6 @@ class Experiment:
                              nn_backbone = net_backbone,
                              nn_dropout = dropout,
                              obd_hidden_size = hidden_size)
-            
-            if verbose:
-                print(f"[experiment] '{net_type}' neural network built with:")
-                print(f"[experiment]\tbackbone -> {net_backbone}")
-                print(f"[experiment]\tdropout -> {dropout}")
-                print(f"[experiment]\tobd_hidden_size -> {hidden_size}\n")
 
         elif net_type == 'clm':
             net_backbone = self.settings['nn_backbone']
@@ -262,29 +255,25 @@ class Experiment:
                              nn_dropout = dropout,
                              clm_link_function = clm_link_function,
                              clm_use_tau = clm_use_tau)
-            
-            if verbose:
-                print(f"[experiment] '{net_type}' neural network built with:")
-                print(f"[experiment]\tbackbone -> {net_backbone}")
-                print(f"[experiment]\tdropout -> {dropout}")
-                print(f"[experiment]\tclm_link_function -> {clm_link_function}")
-                print(f"[experiment]\tclm_use_tau -> {clm_use_tau}\n")
 
         else:
             net_object = NeuralNetwork(ds_img_size = self.ds_img_size, 
                              ds_num_ch = self.ds_num_channels, 
                              ds_num_classes = self.ds_num_classes,
                              nn_dropout = dropout)
-            
-            if verbose:
-                print(f"[experiment] '{net_type}' neural network built with:")
-                print(f"[experiment]\tdropout -> {dropout}\n")
 
+        # building the defined neural network model 
         model = net_object.build(net_type)
+
+        # auto-search the last convolutional layer of the model (uselful for GRAD-cams)
+        for layer in reversed(model.layers):
+            if isinstance(layer, tf.keras.layers.Conv2D):
+                self.last_conv_layer = layer.name
+                break
 
         return model
     
-    def nn_model_compile(self, model, summary=False, verbose=True):
+    def nn_model_compile(self, model, summary=False):
         loss = self.settings['loss']
         metrics = self.settings['metrics']
         optimizer = self.settings['optimizer']
@@ -326,43 +315,32 @@ class Experiment:
                       loss=loss, 
                       metrics=train_metrics)
 
-        if verbose:
-                print("[experiment] neural network model compiled with:")
-                print(f"[experiment]\tloss -> {self.settings['loss']}")
-                print(f"[experiment]\toptimizer -> {self.settings['optimizer']}")
-                print(f"[experiment]\tlearning rate -> {self.settings['learning_rate']}\n")
-
         # Print model summary
         if summary:
             model.summary()
 
-    def nn_model_train(self, model, gradcam_freq=5, gradcam_show=False, fit_verbose=1, verbose=True):
+    def nn_model_train(self, model, gradcam_freq=5, gradcam_show=False, fit_verbose=1):
         # parameters
         epochs = self.settings['nn_epochs']
-
-        # callbacks
-        # saving the best model
-        checkpoint = ModelCheckpoint(f'weights/{self.exp_name}', save_weights_only=True, monitor='val_loss', verbose=1, save_best_only=True)
         
-        # Grad-CAM
-        # auto-search the last convolutional layer of the model
-        last_conv_layer = None
-        for layer in reversed(model.layers):
-            if isinstance(layer, tf.keras.layers.Conv2D):
-                last_conv_layer = layer.name
-                break
-        gradcams_dir_path = os.path.join(self.results_dir, "gradcams/")
+        # ~~~ Callbacks ~~~~
+        # ModelCheckpoint, saving the best model
+        checkpoint = ModelCheckpoint(f'weights/{self.exp_name}', monitor='val_loss', save_weights_only=True, save_best_only=True, verbose=fit_verbose)
+
+        # EarlyStopping, stop training when model has stopped improving
+        early_stop = EarlyStopping(monitor='val_loss', patience=15, verbose=fit_verbose)
+        
+        # ReduceLROnPlateau, reduce learning rate when model has stopped improving.
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=10, min_lr=1e-6, verbose=fit_verbose)
+
+        # GRAD-Cam, showing the gradients activation maps
+        gradcams_dir_path = os.path.join(self.exp_results_subdir, "gradcams/")
         if not os.path.exists(gradcams_dir_path):
             os.makedirs(gradcams_dir_path)
-        gradcam = GradCAMCallback(model, last_conv_layer, self.val_ds, freq=gradcam_freq, show_cams=gradcam_show, save_cams=gradcams_dir_path)
-
-        if gradcam_freq > 0:
-            callbacks = [checkpoint, gradcam]
-        else:
-            callbacks = [checkpoint]
-
-        if verbose:
-                print(f"[experiment] last model's convolutional layer extracted: {last_conv_layer} (will be used by Grad-CAM)\n")
+        gradcam = GradCAMCallback(model, self.last_conv_layer, self.val_ds, freq=gradcam_freq, show_cams=gradcam_show, save_cams=gradcams_dir_path)
+        
+        # callbacks list
+        callbacks = [checkpoint, early_stop, reduce_lr] + [gradcam] * (gradcam_freq > 0)
 
         # neural network fit
         history = model.fit(self.train_ds, 
@@ -416,18 +394,15 @@ class Experiment:
             plt.show()
 
         if save:
-            train_graphs_path = os.path.join(self.results_dir, "train_graphs.png")
+            train_graphs_path = os.path.join(self.exp_results_subdir, "train_graphs.png")
             plt.savefig(train_graphs_path)
         
         plt.close()
 
-    def nn_model_evaluate(self, model, load_best_weights=True, show_cfmat=True, save_cfmat=False, v=True, eval_verbose=2):       
+    def nn_model_evaluate(self, model, load_best_weights=True, show_cfmat=True, save_cfmat=False, eval_verbose=2):       
         # Load the best weights
         if load_best_weights:
             model.load_weights(f'weights/{self.exp_name}')
-
-            if v:
-                print(f'[experiment] best model weights loaded.')
 
         # TODO: check if evaluate give same results as manual metrics computing
         model.evaluate(self.test_ds, verbose=eval_verbose)
@@ -455,10 +430,8 @@ class Experiment:
         for metric, metric_name, is_function in eval_metrics:
             if is_function:
                 result = metric(self.y_test_ds, y_test_pred)
-                #result = tf.round(result, 3).numpy()
                 result = np.round(result, 4)
                 self.metrics_results[metric_name] = result
-                print(f'{metric_name}: {result:.4f}')
             else:
                 # TODO: string metric, idk how to do it
                 pass
@@ -466,7 +439,7 @@ class Experiment:
         # Test Set Confusion Matrix
         cfmat_fig = metrics_e.confusion_matrix(self.y_test_ds, y_test_pred, show=show_cfmat)
         if save_cfmat:
-            cfmat_fig_path = os.path.join(self.results_dir, "confusion_matrix.png")
+            cfmat_fig_path = os.path.join(self.exp_results_subdir, "confusion_matrix.png")
             cfmat_fig.savefig(cfmat_fig_path)
         plt.close()
 
@@ -480,5 +453,3 @@ class Experiment:
         with open(self.csv_results_path, mode='a', encoding='UTF-8', newline='') as csv_file:
             writer = csv.writer(csv_file)
             writer.writerow(values_columns)
-
-        print(f"[experiment] experiment results saved on the csv file: {self.csv_results_path}")

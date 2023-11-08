@@ -151,15 +151,19 @@ class NeuralNetwork:
         dense_hidden = [keras.layers.Dense(hidden_size_per_unit) for _ in range(self.num_classes - 1)]
         dense_dropout = [keras.layers.Dropout(self.dropout) for _ in range(self.num_classes - 1)]
         dense_output = [keras.layers.Dense(1) for _ in range(self.num_classes - 1)]
-        #dense_bn = keras.layers.BatchNormalization()
+        dense_bn = keras.layers.BatchNormalization()
         dense_lrelu = keras.layers.LeakyReLU()
         dense_sigmoid = keras.layers.Activation('sigmoid')
 
         xs = [drop(dense_lrelu(hidden(x))) for hidden, drop in zip(dense_hidden, dense_dropout)]
-        xs = [dense_sigmoid(output(xc))[:, 0] for output, xc in zip(dense_output, xs)]
+        xs = [dense_sigmoid(dense_bn(output(xc)))[:, 0] for output, xc in zip(dense_output, xs)]
+        
+        # alt: without batch norm on last FC + Sigmoid
+        #xs = [dense_sigmoid(output(xc))[:, 0] for output, xc in zip(dense_output, xs)]
         
         out = tf.concat([tf.expand_dims(xc, axis=1) for xc in xs], axis=1)
         
+        # alt: keras model instead of output
         #obd_densenet = keras.Model(x, out, name="obd_densenet")
 
         return out

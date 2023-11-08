@@ -39,13 +39,13 @@ def plot_frames_split(ds_info, log_scale=False, show=False):
     # Create the plot
     plt.figure(figsize=(10, 6))
     if log_scale:
-        plt.barh(centers, train_frame_counts, label='Train Frames', log=True)
-        plt.barh(centers, val_frame_counts, left=train_frame_counts, label='Val Frames', log=True)
-        plt.barh(centers, test_frame_counts, left=[sum(x) for x in zip(train_frame_counts, val_frame_counts)], label='Test Patients', log=True)
+        plt.barh(centers, train_frame_counts, label='Train frames', log=True)
+        plt.barh(centers, val_frame_counts, left=train_frame_counts, label='Val frames', log=True)
+        plt.barh(centers, test_frame_counts, left=[sum(x) for x in zip(train_frame_counts, val_frame_counts)], label='Test frames', log=True)
     else:
-        plt.barh(centers, train_frame_counts, label='Train Frames')
-        plt.barh(centers, val_frame_counts, left=train_frame_counts, label='Val Frames')
-        plt.barh(centers, test_frame_counts, left=[sum(x) for x in zip(train_frame_counts, val_frame_counts)], label='Test Patients')
+        plt.barh(centers, train_frame_counts, label='Train frames')
+        plt.barh(centers, val_frame_counts, left=train_frame_counts, label='Val frames')
+        plt.barh(centers, test_frame_counts, left=[sum(x) for x in zip(train_frame_counts, val_frame_counts)], label='Test frames')
 
     # Add labels and legend
     plt.xlabel('Frame Count (Log Scale)' if log_scale else 'Frame Count')
@@ -78,9 +78,9 @@ def plot_patients_split(ds_info, show=False):
 
     # Create the plot
     plt.figure(figsize=(10, 6))
-    plt.barh(centers, train_patient_counts, label='Train Patients')
-    plt.barh(centers, val_patient_counts, left=train_patient_counts, label='Val Patients')
-    plt.barh(centers, test_patient_counts, left=[sum(x) for x in zip(train_patient_counts, val_patient_counts)], label='Test Patients')
+    plt.barh(centers, train_patient_counts, label='Train patients')
+    plt.barh(centers, val_patient_counts, left=train_patient_counts, label='Val patients')
+    plt.barh(centers, test_patient_counts, left=[sum(x) for x in zip(train_patient_counts, val_patient_counts)], label='Test patients')
 
     # Add labels, title and legend
     plt.xlabel('Patient Count')
@@ -109,14 +109,14 @@ def plot_labels_distr(y_train_ds, y_val_ds, y_test_ds, show=False):
     bar_positions_test = class_labels + bar_width
 
     # Create the plot
-    plt.bar(bar_positions_train, class_counts_train, width=bar_width, label='Train')
-    plt.bar(bar_positions_val, class_counts_val, width=bar_width, label='Validation')
-    plt.bar(bar_positions_test, class_counts_test, width=bar_width, label='Test')
+    plt.bar(bar_positions_train, class_counts_train, width=bar_width, label='Train frames')
+    plt.bar(bar_positions_val, class_counts_val, width=bar_width, label='Validation frames')
+    plt.bar(bar_positions_test, class_counts_test, width=bar_width, label='Test frames')
     
     # Add labels, title and legend
-    plt.xlabel('Gruppo di classi (0, 1, 2, 3)')
-    plt.ylabel('Numero di campioni')
-    plt.title('Distribuzione delle classi nei set di train, validation e test')
+    plt.xlabel('Classes')
+    plt.ylabel('Frames')
+    plt.title('Distribution of labels for each set')
     plt.xticks(group_labels, [0, 1, 2, 3])
     plt.legend()  
 
