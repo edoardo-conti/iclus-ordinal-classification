@@ -7,6 +7,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from experiment import Experiment
+from keras import backend as K
 from logger import Logger
 
 def load_experiments_json(experiments_file):    
@@ -45,9 +46,9 @@ def main():
     parser.add_argument("--ds_map", type=str, required=True, help="pickle containing the dataset frames indexes mapping")
     parser.add_argument("--ds_split", type=str, required=True, help="pickle containing the dataset infos needed for the splitting")
     parser.add_argument("--results_dir", type=str, default="results/", help="directory used to store the results")
-    parser.add_argument("--workers", type=int, default=1, help="verbose intensity for the entire session")
-    parser.add_argument("--verbose", type=int, default=0, help="verbose intensity for the entire session")
-    parser.add_argument("--seed", type=int, default=42, help="random seed")
+    parser.add_argument("--workers", type=int, default=1, help="processes employed when using process-based threading")
+    parser.add_argument("--verbose", type=int, default=1, help="verbose intensity for the whole experiment")
+    parser.add_argument("--seed", type=int, default=42, help="seed used to initialize the random number generator")
     args = parser.parse_args()
     
     # load the experiments JSON file
@@ -60,7 +61,7 @@ def main():
 
     # extract common settings, if any, across experiments
     common_settings = find_common_settings(experiments)
-    same_ds_splitting = all(key in common_settings for key in ['ds_split_ratios', 'ds_reduction'])
+    same_ds_splitting = all(key in common_settings for key in ['ds_split_ratios', 'ds_trim'])
 
     # initialization of the class which represents a particular experiment with a defined set of parameters
     experiment = Experiment(args.exps_json,
@@ -68,6 +69,8 @@ def main():
                             args.ds_map,
                             args.ds_split,
                             args.results_dir,
+                            args.workers,
+                            args.verbose,
                             random_state=args.seed)
     
     # building the class
@@ -81,60 +84,60 @@ def main():
 
     # if the settings regarding the dataset are equal for each experiment, perform them once for all [MHA <3]
     if same_ds_splitting:
-        experiment.split_dataset(common_settings['ds_split_ratios'], common_settings['ds_reduction'])
+        experiment.split_dataset(exps_common_settings=common_settings)
         experiment.compute_class_weight()
-        experiment.generate_split_charts(save=True)
+        experiment.generate_split_charts()
         logger.print_ds_splitting()
     
     with console.status("[bold green]Starting...\n") as status:
         for exp_idx, _ in enumerate(experiments):
-            try:
-                # load the experiment settings
-                exp_name = experiment.load_exp_settings(exp_idx)    
-                nn_model = experiment.settings['nn_type'].upper()
+            # load the experiment settings
+            exp_name = experiment.load_exp_settings(exp_idx)    
+            #nn_model = experiment.settings['nn_type'].upper()
 
-                # update the console status
-                # status.update(f"[bold green]Running experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
+            # update the console status
+            # status.update(f"[bold green]Running experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
 
-                # perform the dataset splitting and computing the class weight if not done before
-                if not same_ds_splitting:
-                    experiment.split_dataset()
-                    experiment.compute_class_weight()
-                    experiment.generate_split_charts(save=True, exp_name=exp_name)
-                    logger.print_ds_splitting()
-                
-                # generate the train, val and test sets based on the batch size
-                experiment.generate_sets()
-                
-                # build the neural network model using the current experiment settings
-                model = experiment.nn_model_build()
+            # perform the dataset splitting and computing the class weight if not done before
+            if not same_ds_splitting:
+                experiment.split_dataset()
+                experiment.compute_class_weight()
+                experiment.generate_split_charts(per_exp=True)
+                logger.print_ds_splitting()
 
-                # compile the neural network model using the current experiment settings
-                experiment.nn_model_compile(model, summary=False)
-                
-                # logging the current experiment's model
-                logger.update_experiment(experiment)
-                #logger.print_model_params()
-
-                # update the console status
-                status.update(f"[bold green]Training model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
-
-                # train the neural network model
-                history = experiment.nn_model_train(model, gradcam_freq=5, num_workers=args.workers, fit_verbose=args.verbose)
-                
-                # plot training graphs
-                experiment.nn_train_graphs(history, show=False, save=True)
-
-                # update the console status
-                status.update(f"[bold green]Evaluating model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
-
-                # evaluating the neural network model
-                experiment.nn_model_evaluate(model, show_cfmat=False, save_cfmat=True, eval_verbose=args.verbose)
+            # generate the train, val and test sets based on the batch size
+            experiment.generate_sets()
             
-                # logging the end of the current experiment
-                console.log(f"experiment [bold cyan]{exp_name}[/bold cyan] [bold green]completed[/bold green] [{exp_idx + 1}/{tot_exps}]")
-            except Exception as e:
-                console.log(f"experiment [bold cyan]{exp_name}[/bold cyan] [bold red]aborted[/bold red] [{exp_idx + 1}/{tot_exps}] : {str(e)}")
+            # build the neural network model using the current experiment settings
+            model = experiment.nn_model_build()
 
+            # compile the neural network model using the current experiment settings
+            experiment.nn_model_compile(model, summary=False)
+            
+            # logging the current experiment's model
+            logger.update_experiment(experiment)
+            #logger.print_model_params()
+            
+            # update the console status
+            status.update(f"[bold green]Training model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
+            
+            # train the neural network model
+            history = experiment.nn_model_train(model, gradcam_freq=5)
+            
+            # plot training graphs
+            experiment.nn_train_graphs(history)
+
+            # update the console status
+            status.update(f"[bold green]Evaluating model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
+
+            # evaluating the neural network model
+            experiment.nn_model_evaluate(model)
+
+            # logging the end of the current experiment
+            console.log(f"experiment [bold cyan]{exp_name}[/bold cyan] [bold green]completed[/bold green] [{exp_idx + 1}/{tot_exps}]")
+            
+            # clear session
+            K.clear_session()
+                
 if __name__ == "__main__":
     main()

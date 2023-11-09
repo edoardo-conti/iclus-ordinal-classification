@@ -20,7 +20,7 @@ def print_split_ds_info(ds_info):
             print(f"   {patient}: {frame_count} frames")
 
 
-def plot_frames_split(ds_info, log_scale=False, show=False):
+def plot_frames_split(ds_info, log_scale=False, display=False):
     # Create data for the plot
     centers = []
     train_frame_counts = []
@@ -53,14 +53,14 @@ def plot_frames_split(ds_info, log_scale=False, show=False):
     plt.title('Frame Distribution by Medical Center')
     plt.legend()
 
-    # Show the plot
-    if show:
+    # display the plot
+    if display:
         plt.show()
 
     return plt.gcf()
 
 
-def plot_patients_split(ds_info, show=False):
+def plot_patients_split(ds_info, display=False):
     # Create data for the plot
     centers = []
     train_patient_counts = []
@@ -88,13 +88,13 @@ def plot_patients_split(ds_info, show=False):
     plt.title('Patient Distribution by Medical Center')
     plt.legend()
 
-    # Show the plot
-    if show:
+    # display the plot
+    if display:
         plt.show()
     
     return plt.gcf()
 
-def plot_labels_distr(y_train_ds, y_val_ds, y_test_ds, show=False):
+def plot_labels_distr(y_train_ds, y_val_ds, y_test_ds, display=False):
     # calculate the class count for each set
     class_counts_val = np.bincount(y_val_ds)
     class_counts_test = np.bincount(y_test_ds)
@@ -120,8 +120,8 @@ def plot_labels_distr(y_train_ds, y_val_ds, y_test_ds, show=False):
     plt.xticks(group_labels, [0, 1, 2, 3])
     plt.legend()  
 
-    # Show the plot
-    if show:
+    # display the plot
+    if display:
         plt.show()
     
     return plt.gcf()

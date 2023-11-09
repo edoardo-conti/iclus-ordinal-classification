@@ -2,16 +2,11 @@ import os
 import shutil
 import json
 import csv
+from typing import Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.utils.class_weight import compute_class_weight
-from rich import print
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.layout import Layout
-from rich.table import Table
 from keras import backend as K
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from dataset import RichHDF5Dataset, HDF5Dataset, split_strategy, reduce_sets
@@ -28,6 +23,10 @@ class Experiment:
                  ds_map_pkl:str,
                  ds_split_pkl:str,
                  results_dir:str,
+                 workers:int = 1,
+                 max_queue_size:int = 512,
+                 verbose:int = 1,
+                 output_mode:Tuple[int, int] = (0, 1),
                  input_size:int = 224,
                  num_channels:int = 3,
                  num_classes:int = 4,
@@ -37,6 +36,10 @@ class Experiment:
         self.ds_map_pkl = ds_map_pkl
         self.ds_split_pkl = ds_split_pkl
         self.results_dir = results_dir
+        self.max_queue_size = max_queue_size
+        self.workers = workers
+        self.verbose = verbose
+        self.output_mode = output_mode
         self.seed = random_state
 
         # params to be computed
@@ -46,9 +49,6 @@ class Experiment:
         self.exp_results_subdir = None
         self.csv_results_path = None
         self.csv_columns = []
-
-        # logging utilities
-        self.console = Console()
 
         # =========================
         # ======== dataset ========
@@ -118,7 +118,7 @@ class Experiment:
         return self.exp_name
 
     def build_exp_name(self):
-        excl_params = ["ds_split_ratios", "ds_reduction", "metrics"]
+        excl_params = ["ds_split_ratios", "ds_trim", "metrics"]
         experiment_params = {key: value for key, value in self.settings.items() if key not in excl_params}
 
         # Generate the experiment name based on the parameters
@@ -131,7 +131,7 @@ class Experiment:
             self.dataset = RichHDF5Dataset(self.dataset_h5, self.ds_map_pkl)
 
     def init_results(self):
-        # clean the previous results and remake the directory
+        # clean the previous results and re-make the directory
         if os.path.exists(self.results_dir):
             shutil.rmtree(self.results_dir)
         os.makedirs(self.results_dir)
@@ -145,12 +145,14 @@ class Experiment:
             writer = csv.writer(csv_file)
             writer.writerow(self.csv_columns)
 
-    def split_dataset(self, split_ratios=None, ds_reduction=None):
-        # Gathering the needed settings and data if not provided
-        if split_ratios is None:
+    def split_dataset(self, exps_common_settings=None):
+        # Gathering the needed settings
+        if exps_common_settings is None:
             split_ratios = self.settings['ds_split_ratios']
-        if ds_reduction is None:
-            ds_reduction = self.settings['ds_reduction']
+            ds_trim = self.settings['ds_trim']
+        else:
+            split_ratios = exps_common_settings['ds_split_ratios']
+            ds_trim = exps_common_settings['ds_trim']
 
         # Splitting the dataset into train, (validation) and test sets
         self.train_idxs, self.val_idxs, self.test_idxs, self.ds_infos = split_strategy(self.dataset, 
@@ -158,12 +160,12 @@ class Experiment:
                                                                                         pkl_file=self.ds_split_pkl, 
                                                                                         rseed=self.seed)
         
-        # Reduce the dataset size if requested
-        if ds_reduction < 1.0:
-            self.train_idxs, self.val_idxs, self.test_idxs = reduce_sets(self.train_idxs, 
-                                                                            self.val_idxs, 
-                                                                            self.test_idxs, 
-                                                                            ds_reduction)
+        # Trim the dataset size if requested
+        if ds_trim < 1.0:
+            self.train_idxs, self.val_idxs, self.test_idxs = reduce_sets(self.train_idxs,
+                                                                            self.val_idxs,
+                                                                            self.test_idxs,
+                                                                            ds_trim)
 
     def generate_sets(self, aug_train_ds=True):
         # Gathering the needed settings and data
@@ -193,38 +195,40 @@ class Experiment:
         else:
             raise Exception('dataset not yet splitted.')
     
-    def generate_split_charts(self, charts_to_generate=None, show=False, save=False, save_path="results", exp_name=None):
+    def generate_split_charts(self, charts=None, per_exp=False):
         if self.ds_infos is not None:
-            if charts_to_generate is None:
-                charts_to_generate = ["fdistr", "pdistr", "ldistr"]
+            if charts is None:
+                charts = ["fdistr", "pdistr", "ldistr"]
+            
+            # get the output mode
+            display, save = self.output_mode
 
-            if save and exp_name is not None:
-                save_path = f"./results/{exp_name}"
+            # choose the right save path (global of per-experiment)
+            save_path = self.exp_results_subdir if per_exp else self.results_dir
                 
-            if "splitinfo" in charts_to_generate:
+            if "splitinfo" in charts:
                 print_split_ds_info(self.ds_infos)
             
-            if "fdistr" in charts_to_generate:
-                pfs = plot_frames_split(self.ds_infos, log_scale=True, show=show)
+            if "fdistr" in charts:
+                pfs = plot_frames_split(self.ds_infos, log_scale=True, display=display)
                 if save:
-                    chart_file_path = os.path.join(save_path, "frames_split.png")
+                    chart_file_path = os.path.join(save_path, "split_per_frames.png")
                     pfs.savefig(chart_file_path)
                     plt.close()
 
-            if "pdistr" in charts_to_generate:
-                pps = plot_patients_split(self.ds_infos, show=show)
+            if "pdistr" in charts:
+                pps = plot_patients_split(self.ds_infos, display=display)
                 if save:
-                    chart_file_path = os.path.join(save_path, "patient_split.png")
+                    chart_file_path = os.path.join(save_path, "split_per_patients.png")
                     pps.savefig(chart_file_path)
                     plt.close()
 
-            if "ldistr" in charts_to_generate:
-                pld = plot_labels_distr(self.y_train_ds, self.y_val_ds, self.y_test_ds, show=show)
+            if "ldistr" in charts:
+                pld = plot_labels_distr(self.y_train_ds, self.y_val_ds, self.y_test_ds, display=display)
                 if save:
-                    chart_file_path = os.path.join(save_path, "labels_distribution.png")
+                    chart_file_path = os.path.join(save_path, "distr_labels_per_set.png")
                     pld.savefig(chart_file_path)
                     plt.close()
-            
         else:
             raise Exception('dataset not yet splitted.')
 
@@ -236,8 +240,8 @@ class Experiment:
             net_backbone = self.settings['nn_backbone']
             hidden_size = self.settings['obd_hidden_size']
             
-            net_object = NeuralNetwork(ds_img_size = self.ds_img_size, 
-                             ds_num_ch = self.ds_num_channels, 
+            net_object = NeuralNetwork(ds_img_size = self.ds_img_size,
+                             ds_num_ch = self.ds_num_channels,
                              ds_num_classes = self.ds_num_classes,
                              nn_backbone = net_backbone,
                              nn_dropout = dropout,
@@ -248,8 +252,8 @@ class Experiment:
             clm_link_function = self.settings['clm_link_function']
             clm_use_tau = self.settings['clm_use_tau']
 
-            net_object = NeuralNetwork(ds_img_size = self.ds_img_size, 
-                             ds_num_ch = self.ds_num_channels, 
+            net_object = NeuralNetwork(ds_img_size = self.ds_img_size,
+                             ds_num_ch = self.ds_num_channels,
                              ds_num_classes = self.ds_num_classes,
                              nn_backbone = net_backbone,
                              nn_dropout = dropout,
@@ -257,8 +261,8 @@ class Experiment:
                              clm_use_tau = clm_use_tau)
 
         else:
-            net_object = NeuralNetwork(ds_img_size = self.ds_img_size, 
-                             ds_num_ch = self.ds_num_channels, 
+            net_object = NeuralNetwork(ds_img_size = self.ds_img_size,
+                             ds_num_ch = self.ds_num_channels,
                              ds_num_classes = self.ds_num_classes,
                              nn_dropout = dropout)
 
@@ -280,7 +284,7 @@ class Experiment:
         learning_rate = self.settings['learning_rate']
         weight_decay = self.settings['weight_decay']
         
-        # ======= optimizer =======
+        # ============== optimizer ==============
         if optimizer == 'Adam':
             optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=learning_rate, 
                                                         weight_decay=weight_decay)
@@ -288,7 +292,7 @@ class Experiment:
             optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=learning_rate, 
                                                        momentum=self.settings['momentum'])
         
-        # ========= loss ==========
+        # ================ loss =================
         if loss == 'ODL':
             loss = ordinal_distance_loss(self.ds_num_classes)
         elif loss == 'CCE':
@@ -297,7 +301,7 @@ class Experiment:
             cost_matrix = K.constant(make_cost_matrix(self.ds_num_classes), dtype=K.floatx())
             loss = qwk_loss(cost_matrix)
         
-        # ======== metrics ========
+        # =============== metrics ===============
         metrics_t = Metrics(self.ds_num_classes, self.settings['nn_type'], 'train')
         #train_metrics = [getattr(metrics_t, metric_name) for metric_name in metrics if metric_name not in train_metrics_exl]
 
@@ -310,28 +314,26 @@ class Experiment:
                     metric = metric_name
                 train_metrics.append(metric)
 
-        # ======== compile ========
-        model.compile(optimizer=optimizer, 
-                      loss=loss, 
-                      metrics=train_metrics)
+        # =============== compile ===============
+        model.compile(optimizer=optimizer, loss=loss, metrics=train_metrics)
 
         # Print model summary
         if summary:
             model.summary()
 
-    def nn_model_train(self, model, gradcam_freq=5, gradcam_show=False, num_workers=1, fit_verbose=1):
+    def nn_model_train(self, model, gradcam_freq=5, gradcam_show=False):
         # parameters
         epochs = self.settings['nn_epochs']
         
-        # ~~~ Callbacks ~~~~
+        # =============== Callbacks ===============
         # ModelCheckpoint, saving the best model
-        checkpoint = ModelCheckpoint(f'weights/{self.exp_name}', monitor='val_loss', save_weights_only=True, save_best_only=True, verbose=fit_verbose)
+        checkpoint = ModelCheckpoint(f'weights/{self.exp_name}', monitor='val_loss', save_weights_only=True, save_best_only=True, verbose=self.verbose)
 
         # EarlyStopping, stop training when model has stopped improving
-        early_stop = EarlyStopping(monitor='val_loss', patience=15, verbose=fit_verbose)
+        early_stop = EarlyStopping(monitor='val_loss', patience=15, verbose=self.verbose)
         
         # ReduceLROnPlateau, reduce learning rate when model has stopped improving.
-        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=10, min_lr=1e-6, verbose=fit_verbose)
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=10, min_lr=1e-6, verbose=self.verbose)
 
         # GRAD-Cam, showing the gradients activation maps
         gradcams_dir_path = os.path.join(self.exp_results_subdir, "gradcams/")
@@ -342,22 +344,25 @@ class Experiment:
         # callbacks list
         callbacks = [checkpoint, early_stop, reduce_lr] + [gradcam] * (gradcam_freq > 0)
         
-        # neural network fit
+        # =============== Neural Network Fit ===============
         history = model.fit(self.train_ds, 
                             shuffle=True,
                             epochs=epochs,
                             class_weight=self.train_class_weights,
                             validation_data=self.val_ds,
                             callbacks=callbacks,
-                            verbose=fit_verbose,
-                            max_queue_size=512,
-                            workers=num_workers,
+                            verbose=self.verbose,
+                            max_queue_size=self.max_queue_size,
+                            workers=self.workers,
                             use_multiprocessing=False
                             )
         
         return history
     
-    def nn_train_graphs(self, history, show=True, save=False):
+    def nn_train_graphs(self, history):
+        # get the output mode
+        display, save = self.output_mode
+
         # Create a figure with two subplots
         _, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -393,25 +398,25 @@ class Experiment:
         ax2.grid()
 
         # Show the figure
-        if show:
+        if display:
             plt.show()
 
         if save:
-            train_graphs_path = os.path.join(self.exp_results_subdir, "train_graphs.png")
+            train_graphs_path = os.path.join(self.exp_results_subdir, "training_plot.png")
             plt.savefig(train_graphs_path)
         
         plt.close()
 
-    def nn_model_evaluate(self, model, load_best_weights=True, show_cfmat=True, save_cfmat=False, eval_verbose=2):       
+    def nn_model_evaluate(self, model, load_best_weights=True):
         # Load the best weights
         if load_best_weights:
             model.load_weights(f'weights/{self.exp_name}')
 
         # TODO: check if evaluate give same results as manual metrics computing
-        model.evaluate(self.test_ds, verbose=eval_verbose)
+        model.evaluate(self.test_ds, verbose=self.verbose)
 
         # get the predictions by running the model inference
-        y_test_pred = model.predict(self.test_ds, verbose=eval_verbose)
+        y_test_pred = model.predict(self.test_ds, verbose=self.verbose)
 
         # compute the evaluation metrics
         metrics_e = Metrics(self.ds_num_classes, self.settings['nn_type'], 'eval')
@@ -440,8 +445,10 @@ class Experiment:
                 pass
         
         # Test Set Confusion Matrix
-        cfmat_fig = metrics_e.confusion_matrix(self.y_test_ds, y_test_pred, show=show_cfmat)
-        if save_cfmat:
+        # get the output mode
+        display, save = self.output_mode
+        cfmat_fig = metrics_e.confusion_matrix(self.y_test_ds, y_test_pred, show=display)
+        if save:
             cfmat_fig_path = os.path.join(self.exp_results_subdir, "confusion_matrix.png")
             cfmat_fig.savefig(cfmat_fig_path)
         plt.close()

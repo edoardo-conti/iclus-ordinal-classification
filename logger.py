@@ -25,12 +25,11 @@ class Logger:
         self.check_exp()
 
         __exps_str = f"Experiments identified: {len(self.exps)} (from file: [magenta]{self.args.exps_json}[/magenta])\n"
-        __ds_str = f"Dataset: {self.exp.dataset.total_videos} videos and {self.exp.dataset.total_frames} frames (from file: {self.args.dataset})\n"
         __results_str = f"Results directory: [magenta]{self.args.results_dir}[/magenta]\n"
         __seed_str = f"Global random seed: {self.args.seed}\n"
         __workers_str = f"Workers: {self.args.workers}\n"
         __hw_accel_str = f"GPU acceleration: {'[bold green]available' if self.exp.hw_accel else '[bold red]not available'}"
-        __settings_panel_content = __exps_str + __ds_str + __results_str + __seed_str + __workers_str + __hw_accel_str
+        __settings_panel_content = __exps_str + __results_str + __seed_str + __workers_str + __hw_accel_str
         __settings_panel = Panel(__settings_panel_content, title='[bold]Settings[/bold]', highlight=True)
         
         print(__settings_panel)
@@ -47,20 +46,21 @@ class Logger:
         train_f_p = round((train_f_count / tot_f_count) * 100)
         val_f_p = round((val_f_count / tot_f_count) * 100)
         test_f_p = 100 - (train_f_p + val_f_p)
-
-        __split_red_str = f"Dataset Reduction OFF: using the 100% of the dataset\n\n"
+        
+        __ds_str = f"Dataset: {self.exp.dataset.total_videos} videos and {self.exp.dataset.total_frames} frames (from file: {self.args.dataset})\n"
+        __split_red_str = "Dataset trimming: [bold cyan]OFF[/bold cyan] (using the [bold cyan]100%[/bold cyan] of the dataset)\n\n"
         if ds_f_count != tot_f_count:
-            # data reduction on
+            # dataset trimming
             red_perc = round(tot_f_count * 100 / ds_f_count)
-            __split_red_str = f"Dataset Reduction ON: using the [bold cyan]{red_perc}%[/bold cyan] of the dataset\n\n"
+            __split_red_str = f"Dataset trimming: [bold cyan]ON[/bold cyan] (using the [bold cyan]{red_perc}%[/bold cyan] of the dataset)\n\n"
         
         __split_train_str = f"Training set\t= {train_f_count} frames ([bold cyan]{train_f_p}%[/bold cyan])\n"
         __split_val_str = f"Validation set\t= {val_f_count} frames ([bold cyan]{val_f_p}%[/bold cyan])\n"
         __split_test_str = f"Test set\t= {test_f_count} frames ([bold cyan]{test_f_p}%[/bold cyan])\n\n"
         __split_cw_str = f"Training set class weights: {self.exp.train_class_weights}"
-        __split_panel_content = __split_red_str + __split_train_str + __split_val_str + __split_test_str + __split_cw_str
+        __split_panel_content = __ds_str + __split_red_str + __split_train_str + __split_val_str + __split_test_str + __split_cw_str
         
-        __split_panel = Panel(__split_panel_content, title='[bold]Dataset Splitting[/bold]', highlight=True)
+        __split_panel = Panel(__split_panel_content, title='[bold]Dataset[/bold]', highlight=True)
         
         print(__split_panel)
     
