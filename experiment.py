@@ -9,7 +9,7 @@ import tensorflow as tf
 from sklearn.utils.class_weight import compute_class_weight
 from keras import backend as K
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-from dataset import RichHDF5Dataset, HDF5Dataset, split_strategy, reduce_sets
+from dataset import RichHDF5Dataset, split_strategy, trim_sets, create_tf_dataset
 from utilities import print_split_ds_info, plot_frames_split, plot_patients_split, plot_labels_distr
 from network import NeuralNetwork
 from losses import make_cost_matrix, qwk_loss, ordinal_distance_loss
@@ -162,7 +162,7 @@ class Experiment:
         
         # Trim the dataset size if requested
         if ds_trim < 1.0:
-            self.train_idxs, self.val_idxs, self.test_idxs = reduce_sets(self.train_idxs,
+            self.train_idxs, self.val_idxs, self.test_idxs = trim_sets(self.train_idxs,
                                                                             self.val_idxs,
                                                                             self.test_idxs,
                                                                             ds_trim)
@@ -172,10 +172,14 @@ class Experiment:
         nn_batch_size = self.settings['nn_batch_size']
 
         # Create the train, (val) and test sets to feed the neural networks
-        self.train_ds = HDF5Dataset(self.dataset, self.train_idxs, nn_batch_size, augmentation=aug_train_ds)
-        self.val_ds = HDF5Dataset(self.dataset, self.val_idxs, nn_batch_size)
-        self.test_ds = HDF5Dataset(self.dataset, self.test_idxs, nn_batch_size)
+        #self.train_ds = HDF5Dataset(self.dataset, self.train_idxs, batch_size=nn_batch_size, augmentation=aug_train_ds).create_dataset()
+        #self.val_ds = HDF5Dataset(self.dataset, self.val_idxs, batch_size=nn_batch_size).create_dataset()
+        #self.test_ds = HDF5Dataset(self.dataset, self.test_idxs, batch_size=nn_batch_size).create_dataset()
 
+        self.train_ds = create_tf_dataset(self.dataset, self.train_idxs, batch_size=nn_batch_size, is_training=True, aug=aug_train_ds)
+        self.val_ds = create_tf_dataset(self.dataset, self.val_idxs, batch_size=nn_batch_size)
+        self.test_ds = create_tf_dataset(self.dataset, self.test_idxs, batch_size=nn_batch_size)
+        
     def compute_class_weight(self):
         if self.ds_infos is not None:
             # Retrieves the dataset's labels
@@ -324,7 +328,8 @@ class Experiment:
     def nn_model_train(self, model, gradcam_freq=5, gradcam_show=False):
         # parameters
         epochs = self.settings['nn_epochs']
-        
+        batch_size = self.settings['nn_batch_size']
+
         # =============== Callbacks ===============
         # ModelCheckpoint, saving the best model
         checkpoint = ModelCheckpoint(f'weights/{self.exp_name}', monitor='val_loss', save_weights_only=True, save_best_only=True, verbose=self.verbose)
@@ -335,21 +340,35 @@ class Experiment:
         # ReduceLROnPlateau, reduce learning rate when model has stopped improving.
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=10, min_lr=1e-6, verbose=self.verbose)
 
-        # GRAD-Cam, showing the gradients activation maps
-        gradcams_dir_path = os.path.join(self.exp_results_subdir, "gradcams/")
-        if not os.path.exists(gradcams_dir_path):
-            os.makedirs(gradcams_dir_path)
-        gradcam = GradCAMCallback(model, self.last_conv_layer, self.val_ds, freq=gradcam_freq, show_cams=gradcam_show, save_cams=gradcams_dir_path)
+        # # GRAD-Cam, showing the gradients activation maps
+        # gradcams_dir_path = os.path.join(self.exp_results_subdir, "gradcams/")
+        # if not os.path.exists(gradcams_dir_path):
+        #     os.makedirs(gradcams_dir_path)
+        # gradcam = GradCAMCallback(model, self.last_conv_layer, self.val_ds, freq=gradcam_freq, show_cams=gradcam_show, save_cams=gradcams_dir_path)
         
-        # callbacks list
-        callbacks = [checkpoint, early_stop, reduce_lr] + [gradcam] * (gradcam_freq > 0)
+        # # callbacks list
+        # callbacks = [checkpoint, early_stop, reduce_lr] + [gradcam] * (gradcam_freq > 0)
+        callbacks = [checkpoint, early_stop, reduce_lr]
         
+        # steps
+        train_samples = len(self.train_idxs)
+        train_steps = train_samples // batch_size
+        if train_samples % batch_size != 0:
+            train_steps += 1
+        
+        val_samples = len(self.val_idxs)
+        val_steps = val_samples // batch_size
+        if val_samples % batch_size != 0:
+            val_steps += 1
+
         # =============== Neural Network Fit ===============
-        history = model.fit(self.train_ds, 
+        history = model.fit(self.train_ds.as_numpy_iterator(), 
                             shuffle=True,
                             epochs=epochs,
+                            steps_per_epoch=train_steps,
                             class_weight=self.train_class_weights,
-                            validation_data=self.val_ds,
+                            validation_data=self.val_ds.as_numpy_iterator(),
+                            validation_steps=val_steps,
                             callbacks=callbacks,
                             verbose=self.verbose,
                             max_queue_size=self.max_queue_size,
@@ -412,11 +431,28 @@ class Experiment:
         if load_best_weights:
             model.load_weights(f'weights/{self.exp_name}')
 
-        # TODO: check if evaluate give same results as manual metrics computing
-        model.evaluate(self.test_ds, verbose=self.verbose)
+        # steps
+        nn_batch_size = self.settings['nn_batch_size']
+        test_samples = len(self.test_idxs)
+        test_steps = test_samples // nn_batch_size
+        if test_samples % nn_batch_size != 0:
+            test_steps += 1
 
+        # TODO: check if evaluate give same results as manual metrics computing
+        model.evaluate(self.test_ds.as_numpy_iterator(), 
+                       steps=test_steps,
+                       max_queue_size=self.max_queue_size,
+                       workers=self.workers,
+                       use_multiprocessing=False,
+                       verbose=self.verbose)
+        
         # get the predictions by running the model inference
-        y_test_pred = model.predict(self.test_ds, verbose=self.verbose)
+        y_test_pred = model.predict(self.test_ds.as_numpy_iterator(), 
+                                    steps=test_steps,
+                                    max_queue_size=self.max_queue_size,
+                                    workers=self.workers,
+                                    use_multiprocessing=False,
+                                    verbose=self.verbose)
 
         # compute the evaluation metrics
         metrics_e = Metrics(self.ds_num_classes, self.settings['nn_type'], 'eval')

@@ -8,6 +8,7 @@ import tensorflow as tf
 from keras.utils import Sequence, to_categorical
 from tqdm import tqdm
 import albumentations as A
+import cv2
 
 class RichHDF5Dataset(Sequence):
     def __init__(self, file_path, pkl_frame_idxmap_path):
@@ -74,81 +75,7 @@ class RichHDF5Dataset(Sequence):
         patient = video_group.attrs['patient']
         medical_center = video_group.attrs['medical_center']
 
-        return (index, frame_data, target_data, patient, medical_center)
-
-
-class HDF5Dataset(Sequence):
-    def __init__(self, hdf5_dataset, indexes, batch_size=8, augmentation=False):
-        self.hdf5_dataset = hdf5_dataset
-        self.dataset_indexes = indexes
-        self.batch_size = batch_size
-        self.augmentation = augmentation
-        self.resize_size = [224, 224]
-    
-    def __len__(self):
-        num_samples = len(self.dataset_indexes)
-        num_batches = num_samples // self.batch_size
-        if num_samples % self.batch_size != 0:
-            num_batches += 1
-
-        return num_batches
-    
-    def dataAugmentation(self, frame):
-        min_size = min(frame.shape[0], frame.shape[1])
-        transform = A.Compose([
-            # I. Elastic Warping 
-            A.ElasticTransform(alpha=100, sigma=10, alpha_affine=0.1, p=0.3),
-            # II. Cropping
-            A.RandomSizedCrop(min_max_height=(int(min_size * 0.7), min_size),
-                              height=frame.shape[0], width=frame.shape[1], p=0.3),
-            # III. Blurring
-            A.GaussianBlur(blur_limit=(11, 21), p=0.3),
-            # IV. Random rotation
-            A.Rotate(limit=(-23, 23), p=0.3),
-            # V. Contrast distortion
-            A.RandomBrightnessContrast(brightness_limit=0.5, contrast_limit=0.5, p=0.3),
-        ])
-
-        return transform(image=frame)['image']
-
-    def __getitem__(self, batch_index):
-        start_idx = batch_index * self.batch_size
-        end_idx = (batch_index + 1) * self.batch_size
-
-        frames = []
-        labels = []
-
-        for index in self.dataset_indexes[start_idx:end_idx]:
-            if index < len(self.hdf5_dataset):
-                _, frame_data, target_data, _, _ = self.hdf5_dataset[index]
-                
-                # Perform data augmentation on-the-fly is enabled
-                # note: to be applied before converting the frame to tf tensor
-                if self.augmentation: 
-                    frame_data = self.dataAugmentation(frame_data)
-
-                # Convert the frame data into a tensor
-                frame_tensor = tf.convert_to_tensor(frame_data)
-
-                # Normalize image
-                frame_tensor = tf.cast(frame_tensor, tf.float32) / 255.0
-
-                # Apply resize transformation (mandatory for both train and test sets)
-                frame_tensor = tf.image.resize(frame_tensor, self.resize_size, antialias=True)
-
-                # One-hot encode the targets to get the label
-                label = tf.squeeze(target_data)
-                label_ohe = to_categorical(label, num_classes=4)
-
-                # Batches the frames
-                frames.append(frame_tensor)
-                labels.append(label_ohe)
-
-        # stack the frame to output the expected shape (es if bs=8: (8, 224, 224, 3))
-        frames_batch = tf.stack(frames, axis=0)
-        labels_batch = tf.stack(labels, axis=0)
-
-        return frames_batch, labels_batch
+        return index, frame_data, target_data, patient, medical_center
 
 
 def _load_dsdata_pickle(dataset, pkl_file):
@@ -192,6 +119,69 @@ def _load_dsdata_pickle(dataset, pkl_file):
     
     return medical_center_patients, data_index, data_map_idxs_pcm, score_counts, labels
 
+# =========================================================================================
+# ======================================== -> NEW =========================================
+# =========================================================================================
+
+def data_augmentation(frame):
+    min_size = min(frame.shape[0], frame.shape[1])
+    transform = A.Compose([
+        # I. Elastic Warping 
+        A.ElasticTransform(alpha=100, sigma=10, alpha_affine=0.1, p=0.3),
+        # II. Cropping
+        A.RandomSizedCrop(min_max_height=(int(min_size * 0.7), min_size),
+                          height=frame.shape[0], width=frame.shape[1], p=0.3),
+        # III. Blurring
+        A.GaussianBlur(blur_limit=(11, 21), p=0.3),
+        # IV. Random rotation
+        A.Rotate(limit=(-23, 23), p=0.3),
+        # V. Contrast distortion
+        A.RandomBrightnessContrast(brightness_limit=0.5, contrast_limit=0.5, p=0.3),
+    ])
+
+    return transform(image=frame)['image']
+
+def process_data(frame_data, target_data):
+    frame_tensor = tf.cast(frame_data, tf.float32) / 255.0
+    #frame_tensor = tf.image.resize(frame_tensor, [224, 224], antialias=True)
+    
+    label = tf.squeeze(target_data)
+    label_ohe = tf.one_hot(label, depth=4, dtype=tf.int32)
+
+    return frame_tensor, label_ohe
+
+def create_tf_dataset(hdf5_dataset, indexes, batch_size, is_training=False, aug=False):
+    def _map(index):
+        index = index.numpy()
+        _, frame_data, target_data, _, _ = hdf5_dataset[index]
+        
+        resized_frame = cv2.resize(frame_data, (224,224))
+
+        if is_training and aug:
+            frame_data = data_augmentation(frame_data)
+
+        return resized_frame, target_data
+    
+    dataset = tf.data.Dataset.from_tensor_slices(indexes)
+
+    if is_training:
+        dataset = dataset.shuffle(buffer_size=1000, reshuffle_each_iteration=True)
+    
+    dataset = dataset.map(lambda index: tf.py_function(func=_map, inp=[index], Tout=(tf.float32, tf.int32)), 
+                      num_parallel_calls=tf.data.AUTOTUNE)
+    dataset = dataset.map(lambda f, t: tf.py_function(func=process_data, inp=[f, t], Tout=(tf.float32, tf.int32)),
+                          num_parallel_calls=tf.data.AUTOTUNE)
+
+    dataset = dataset.batch(batch_size)
+    # TODO: capiamo... 
+    dataset = dataset.repeat()
+    dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
+
+    return dataset
+    
+# =========================================================================================
+# ======================================== NEW <- =========================================
+# =========================================================================================
 
 def split_strategy(dataset, ratios=[0.6, 0.2, 0.2], pkl_file=None, rseed=0):
     # Set the random seed for repeatability
@@ -326,7 +316,7 @@ def split_strategy(dataset, ratios=[0.6, 0.2, 0.2], pkl_file=None, rseed=0):
     return train_indices, val_indices, test_indices, split_info
 
 
-def reduce_sets(train, val=[], test=[], perc=1.0):
+def trim_sets(train, val=[], test=[], perc=1.0):
     # Compute length of subsets
     num_train_samples = int(len(train) * perc)
     num_test_samples = int(len(test) * perc)
