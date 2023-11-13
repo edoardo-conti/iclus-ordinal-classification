@@ -6,6 +6,18 @@ from sklearn.preprocessing import normalize
 import matplotlib
 import matplotlib.pyplot as plt
 
+class UpdataStatusCallback(keras.callbacks.Callback):
+    def __init__(self, status, epochs):
+        super(UpdataStatusCallback, self).__init__()
+        self.status = status[0]
+        self.curr_mess = status[1]
+        self.epochs = epochs
+
+    def on_epoch_begin(self, epoch, logs=None):
+        curr_epoch = epoch + 1
+        new_mess = f'{self.curr_mess}[{curr_epoch}/{self.epochs}]...'
+        self.status.update(new_mess)
+        
 class GradCAMCallback(tf.keras.callbacks.Callback):
     def __init__(self, 
                  model, 

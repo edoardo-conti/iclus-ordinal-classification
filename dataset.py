@@ -150,40 +150,40 @@ def process_data(frame_data, target_data):
 
     return frame_tensor, label_ohe
 
-def create_tf_dataset(hdf5_dataset, indexes, batch_size, is_training=False, aug=False):
+def create_tf_dataset(hdf5_dataset, indexes, batch_size, is_train=False, aug=False):
     def _map(index):
         index = index.numpy()
         _, frame_data, target_data, _, _ = hdf5_dataset[index]
         
         resized_frame = cv2.resize(frame_data, (224,224))
 
-        if is_training and aug:
+        if is_train and aug:
             frame_data = data_augmentation(frame_data)
 
         return resized_frame, target_data
     
     dataset = tf.data.Dataset.from_tensor_slices(indexes)
-
-    if is_training:
+    
+    if is_train:
         dataset = dataset.shuffle(buffer_size=1000, reshuffle_each_iteration=True)
     
     dataset = dataset.map(lambda index: tf.py_function(func=_map, inp=[index], Tout=(tf.float32, tf.int32)), 
-                      num_parallel_calls=tf.data.AUTOTUNE)
+                            num_parallel_calls=tf.data.AUTOTUNE)
     dataset = dataset.map(lambda f, t: tf.py_function(func=process_data, inp=[f, t], Tout=(tf.float32, tf.int32)),
-                          num_parallel_calls=tf.data.AUTOTUNE)
-
+                            num_parallel_calls=tf.data.AUTOTUNE)
+    
     dataset = dataset.batch(batch_size)
     # TODO: capiamo... 
     dataset = dataset.repeat()
     dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
 
-    return dataset
+    return dataset.as_numpy_iterator()
     
 # =========================================================================================
 # ======================================== NEW <- =========================================
 # =========================================================================================
 
-def split_strategy(dataset, ratios=[0.6, 0.2, 0.2], pkl_file=None, rseed=0):
+def split_strategy(dataset, ratios=[0.6, 0.2, 0.2], pkl_file=None, rseed=42):
     # Set the random seed for repeatability
     random.seed(rseed)
 
@@ -193,127 +193,75 @@ def split_strategy(dataset, ratios=[0.6, 0.2, 0.2], pkl_file=None, rseed=0):
     elif len(ratios) == 3:
         train_ratio, val_ratio, _ = ratios
     else:
-        raise ValueError("Ratios list must have 1, 2, or 3 values that sum to 1.0")
+        raise ValueError("ratios list must have 1, 2, or 3 values that sum to 1.0")
     
-    # 0. Gather the metadata
-    medical_center_patients, data_index, data_map_idxs_pcm, score_counts, labels = _load_dsdata_pickle(dataset, pkl_file)
-
-    # 1. Calculate the number of patients and frames for each medical center
-    frames_by_center = defaultdict(int)
-    frames_by_center_patient = defaultdict(lambda: defaultdict(int))
-
-    for (patient, center) in data_index.values():
-        frames_by_center[center] += 1
-        frames_by_center_patient[center][patient] += 1
+    # 0. gather the metadata
+    medical_center_patients, data_index, data_map_idxs_pcm, score_counts, labels = _load_dsdata_pickle(dataset, pkl_file)    
     
-    # 2. Calculate the target number of frames for each split
-    total_frames = sum(frames_by_center.values())
+    # 1. calculate the target number of frames for each split
+    total_frames = len(labels)
     train_frames = int(total_frames * train_ratio)
     val_frames = int(total_frames * val_ratio)
     test_frames = total_frames - train_frames - val_frames
-
-    # 3. Create a dictionary to track patient percentages for each center
-    patient_perc_by_center = defaultdict(lambda: defaultdict(float))
-    for center, patients in medical_center_patients.items():
-        patients = list(patients)
-
-        for patient in patients:
-            patient_frames = frames_by_center_patient[center][patient]
-            patient_percentage = patient_frames / total_frames
-            patient_perc_by_center[center][patient] = patient_percentage
     
-    # 4. Splitting the dataset by patients taking into account frames ratio
-    # lists
-    train_indices = []
-    val_indices = []
-    test_indices = []
+    # 2. splitting the dataset by patients taking into account sets split ratio
+    # sets
+    train_idxs = []
+    val_idxs = []
+    test_idxs = []
 
     # sets to store statistics about medical centers and patients
     train_patients_by_center = defaultdict(set)
     val_patients_by_center = defaultdict(set)
     test_patients_by_center = defaultdict(set)
 
-    # 4.1 Test set
-    while len(test_indices) < test_frames:
-        center = random.choice(list(patient_perc_by_center.keys()))
-        patients = list(patient_perc_by_center[center].keys())
-        if patients:
-            patient = random.choice(patients)
-            if center in patient_perc_by_center and patient in patient_perc_by_center[center]:
-                if len(test_indices) + patient_perc_by_center[center][patient] * total_frames <= test_frames:
-                    test_indices.extend(data_map_idxs_pcm[(patient, center)])
-                    test_patients_by_center[center].add(patient)
-                    del patient_perc_by_center[center][patient]
-                else:
-                    # If it passes test_frames, look for remaining patients that can be added to bring the ratio closer
-                    remaining_frames = test_frames - len(test_indices)
-                    candidates = [p for p in patients if patient_perc_by_center[center][p] * total_frames <= remaining_frames]
-                    if candidates:
-                        # Sort candidates based on how close they are to your desired ratio
-                        candidates = sorted(candidates, key=lambda p: abs((len(test_indices) + patient_perc_by_center[center][p] * total_frames) / test_frames - 1))
-                        
-                        for best_candidate in candidates:
-                            if len(test_indices) + patient_perc_by_center[center][best_candidate] * total_frames <= test_frames:
-                                test_indices.extend(data_map_idxs_pcm[(best_candidate, center)])
-                                test_patients_by_center[center].add(best_candidate)
-                                del patient_perc_by_center[center][best_candidate]
-                    else:
-                        break
+    # 2.1 test set
+    while (len(test_idxs) < test_frames):
+        center = random.choice(list(medical_center_patients.keys()))
+        patients = medical_center_patients[center]
+        try:
+            patient = patients.pop()
+            test_idxs.extend(data_map_idxs_pcm[(patient, center)])
+            test_patients_by_center[center].add(patient)
+        except:
+            del medical_center_patients[center]
+        
+    # 2.2 validation set
+    while (len(val_idxs) < val_frames):
+        center = random.choice(list(medical_center_patients.keys()))
+        patients = medical_center_patients[center]
+        try:
+            patient = patients.pop()
+            val_idxs.extend(data_map_idxs_pcm[(patient, center)])
+            val_patients_by_center[center].add(patient)
+        except:
+                del medical_center_patients[center]
 
-    # 4.2 Validation set
-    while len(val_indices) < val_frames:
-        center = random.choice(list(patient_perc_by_center.keys()))
-        patients = list(patient_perc_by_center[center].keys())
-        if patients:
-            patient = random.choice(patients)
-            if center in patient_perc_by_center and patient in patient_perc_by_center[center]:
-                if len(val_indices) + patient_perc_by_center[center][patient] * total_frames <= val_frames:
-                    val_indices.extend(data_map_idxs_pcm[(patient, center)])
-                    val_patients_by_center[center].add(patient)
-                    del patient_perc_by_center[center][patient]
-                else:
-                    # If it passes val_frames, look for remaining patients that can be added to bring the ratio closer
-                    remaining_frames = val_frames - len(val_indices)
-                    candidates = [p for p in patients if patient_perc_by_center[center][p] * total_frames <= remaining_frames]
-                    if candidates:
-                        # Sort candidates based on how close they are to your desired ratio
-                        candidates = sorted(candidates, key=lambda p: abs((len(val_indices) + patient_perc_by_center[center][p] * total_frames) / val_frames - 1))
-                        
-                        for best_candidate in candidates:
-                            if len(val_indices) + patient_perc_by_center[center][best_candidate] * total_frames <= val_frames:
-                                val_indices.extend(data_map_idxs_pcm[(best_candidate, center)])
-                                val_patients_by_center[center].add(best_candidate)
-                                del patient_perc_by_center[center][best_candidate]
-                    else:
-                        break
-    
-    # 4.3 Train set
-    for center in patient_perc_by_center:
-        for patient in patient_perc_by_center[center]:
-            train_indices.extend(data_map_idxs_pcm[(patient, center)])
+    # 2.3 training set
+    for center in list(medical_center_patients.keys()):
+        for patient in list(medical_center_patients[center]):
+            train_idxs.extend(data_map_idxs_pcm[(patient, center)])
             train_patients_by_center[center].add(patient)
     
-    # 5. Diagnostic checks and return values
-    total_frames_calc = len(train_indices) + len(val_indices) + len(test_indices)
+    # 4. compliance checks
+    total_frames_calc = len(train_idxs) + len(val_idxs) + len(test_idxs)
     if total_frames != total_frames_calc:
         raise ValueError(f"splitting gone wrong (expected: {total_frames}, got:{total_frames_calc})")
     
-    # sum up statistics info
+    # 5. sum up statistics info
     split_info = {
         'medical_center_patients': medical_center_patients,
-        'frames_by_center': frames_by_center,
         'train_patients_by_center': train_patients_by_center,
         'val_patients_by_center': val_patients_by_center,
         'test_patients_by_center': test_patients_by_center,
-        'frames_by_center_patient': frames_by_center_patient,
         'score_counts': score_counts,
         'labels': labels
     }
 
     if val_ratio == 0.0:
-        return train_indices, test_indices, split_info
+        return train_idxs, test_idxs, split_info
 
-    return train_indices, val_indices, test_indices, split_info
+    return train_idxs, val_idxs, test_idxs, split_info
 
 
 def trim_sets(train, val=[], test=[], perc=1.0):

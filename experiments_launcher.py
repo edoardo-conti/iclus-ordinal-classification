@@ -62,7 +62,7 @@ def main():
     # extract common settings, if any, across experiments
     common_settings = find_common_settings(experiments)
     same_ds_splitting = all(key in common_settings for key in ['ds_split_ratios', 'ds_trim'])
-
+    
     # initialization of the class which represents a particular experiment with a defined set of parameters
     experiment = Experiment(args.exps_json,
                             args.dataset,
@@ -94,7 +94,7 @@ def main():
             # load the experiment settings
             exp_name = experiment.load_exp_settings(exp_idx)    
             #nn_model = experiment.settings['nn_type'].upper()
-
+            
             # update the console status
             # status.update(f"[bold green]Running experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
 
@@ -119,10 +119,11 @@ def main():
             #logger.print_model_params()
             
             # update the console status
-            status.update(f"[bold green]Training model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]...")
+            mess = f"[bold green]Training model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]"
+            status.update(mess)
             
             # train the neural network model
-            history = experiment.nn_model_train(model, gradcam_freq=5)
+            history = experiment.nn_model_train(model, gradcam_freq=5, status=(status, mess))
             
             # plot training graphs
             experiment.nn_train_graphs(history)

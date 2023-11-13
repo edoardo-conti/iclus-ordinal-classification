@@ -1,6 +1,16 @@
-*.pyc
-*.h5
-*bak*
+# macos
 .DS_Store
+
+# miscellaneous
+*.pyc
+
+# backups
+*bak*
+
+# dataset
+*.h5
+dataset/*
+
+# neural network
 weights/*
 results/*

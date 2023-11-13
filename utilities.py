@@ -6,58 +6,18 @@ def print_split_ds_info(ds_info):
     for medical_center in ds_info['medical_center_patients'].keys():
         print(f"Medical Center: {medical_center}")
         print(f"  Frames in center: {ds_info['frames_by_center'][medical_center]}")
-        print(f"  Train patients:")
+        print("  Train patients:")
         for patient in ds_info['train_patients_by_center'][medical_center]:
             frame_count = ds_info['frames_by_center_patient'][medical_center][patient]
             print(f"   {patient}: {frame_count} frames")
-        print(f"  Val patients:")
+        print("  Val patients:")
         for patient in ds_info['val_patients_by_center'][medical_center]:
             frame_count = ds_info['frames_by_center_patient'][medical_center][patient]
             print(f"   {patient}: {frame_count} frames")
-        print(f"  Test patients:")
+        print("  Test patients:")
         for patient in ds_info['test_patients_by_center'][medical_center]:
             frame_count = ds_info['frames_by_center_patient'][medical_center][patient]
             print(f"   {patient}: {frame_count} frames")
-
-
-def plot_frames_split(ds_info, log_scale=False, display=False):
-    # Create data for the plot
-    centers = []
-    train_frame_counts = []
-    val_frame_counts = []
-    test_frame_counts = []
-
-    for medical_center in ds_info['medical_center_patients'].keys():
-        centers.append(medical_center)
-        train_frame_count = sum(ds_info['frames_by_center_patient'][medical_center][patient] for patient in ds_info['train_patients_by_center'][medical_center])
-        val_frame_count = sum(ds_info['frames_by_center_patient'][medical_center][patient] for patient in ds_info['val_patients_by_center'][medical_center])
-        test_frame_count = sum(ds_info['frames_by_center_patient'][medical_center][patient] for patient in ds_info['test_patients_by_center'][medical_center])
-        train_frame_counts.append(train_frame_count)
-        val_frame_counts.append(val_frame_count)
-        test_frame_counts.append(test_frame_count)
-
-    # Create the plot
-    plt.figure(figsize=(10, 6))
-    if log_scale:
-        plt.barh(centers, train_frame_counts, label='Train frames', log=True)
-        plt.barh(centers, val_frame_counts, left=train_frame_counts, label='Val frames', log=True)
-        plt.barh(centers, test_frame_counts, left=[sum(x) for x in zip(train_frame_counts, val_frame_counts)], label='Test frames', log=True)
-    else:
-        plt.barh(centers, train_frame_counts, label='Train frames')
-        plt.barh(centers, val_frame_counts, left=train_frame_counts, label='Val frames')
-        plt.barh(centers, test_frame_counts, left=[sum(x) for x in zip(train_frame_counts, val_frame_counts)], label='Test frames')
-
-    # Add labels and legend
-    plt.xlabel('Frame Count (Log Scale)' if log_scale else 'Frame Count')
-    plt.ylabel('Medical Center')
-    plt.title('Frame Distribution by Medical Center')
-    plt.legend()
-
-    # display the plot
-    if display:
-        plt.show()
-
-    return plt.gcf()
 
 
 def plot_patients_split(ds_info, display=False):
@@ -94,7 +54,7 @@ def plot_patients_split(ds_info, display=False):
     
     return plt.gcf()
 
-def plot_labels_distr(y_train_ds, y_val_ds, y_test_ds, display=False):
+def plot_fdistr_per_class(y_train_ds, y_val_ds, y_test_ds, display=False):
     # calculate the class count for each set
     class_counts_val = np.bincount(y_val_ds)
     class_counts_test = np.bincount(y_test_ds)
@@ -116,7 +76,7 @@ def plot_labels_distr(y_train_ds, y_val_ds, y_test_ds, display=False):
     # Add labels, title and legend
     plt.xlabel('Classes')
     plt.ylabel('Frames')
-    plt.title('Distribution of labels for each set')
+    plt.title('Frames distribution in sets for each class')
     plt.xticks(group_labels, [0, 1, 2, 3])
     plt.legend()  
 
@@ -125,4 +85,49 @@ def plot_labels_distr(y_train_ds, y_val_ds, y_test_ds, display=False):
         plt.show()
     
     return plt.gcf()
- 
+
+def plot_fdistr_per_class_pie(y_train_ds, y_val_ds, y_test_ds, display=False):
+    sets = ['Train', 'Validation', 'Test']
+    datasets = [y_train_ds, y_val_ds, y_test_ds]
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    for i, set_name in enumerate(sets):
+        class_counts = np.bincount(datasets[i])
+        labels = np.arange(len(class_counts)).astype(int)
+
+        wedges, _, _ = axes[i].pie(class_counts, labels=labels, autopct='%1.1f%%', startangle=90)
+        axes[i].set_title(f'{set_name} Set')
+
+     # Creazione di una legenda unica per tutta la figura
+    legend_labels = [f'Class {label}' for label in labels]
+    fig.legend(wedges, legend_labels, title='Classes', loc='lower center', ncol=len(set_name))
+
+    plt.suptitle('Frames distribution in sets for each class', y=1.05)
+    #plt.subplots_adjust(bottom=0.3)
+    
+    # display the plot
+    if display:
+        plt.show()
+    
+    return plt.gcf()
+
+def plot_labels_distr(labels, display=False):
+    # create an occurrence count of each class
+    counts = {label: labels.count(label) for label in set(labels)}
+
+    # converts the count into two separate lists for plotting
+    class_names, class_counts = zip(*counts.items())
+
+    # create a bar-plot 
+    plt.figure(figsize=(10, 6))
+    plt.bar(class_names, class_counts)
+    plt.title('Labels distribution in the dataset')
+    plt.xlabel('Classes')
+    plt.ylabel('Frames')
+    
+    # display the plot
+    if display:
+        plt.show()
+    
+    return plt.gcf()

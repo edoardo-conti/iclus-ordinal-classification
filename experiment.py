@@ -10,11 +10,11 @@ from sklearn.utils.class_weight import compute_class_weight
 from keras import backend as K
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from dataset import RichHDF5Dataset, split_strategy, trim_sets, create_tf_dataset
-from utilities import print_split_ds_info, plot_frames_split, plot_patients_split, plot_labels_distr
+from utilities import print_split_ds_info, plot_patients_split, plot_fdistr_per_class_pie, plot_fdistr_per_class, plot_labels_distr
 from network import NeuralNetwork
 from losses import make_cost_matrix, qwk_loss, ordinal_distance_loss
 from metrics import Metrics
-from gradcam import GradCAMCallback
+from gradcam import GradCAMCallback, UpdataStatusCallback
 
 class Experiment:
     def __init__(self, 
@@ -76,7 +76,7 @@ class Experiment:
         # ==== neural network =====
         # =========================
         self.last_conv_layer = None
-        self.train_metrics_exl = ['top_2_acc', 'top_3_acc', 'qwk', 'spearman']
+        self.train_metrics_exl = ['top_2_acc', 'top_3_acc', 'ms', 'spearman', 'qwk']
         self.metrics_results = {}
     
     def build(self):
@@ -102,7 +102,7 @@ class Experiment:
 
             # set the class attribute regarding the hw acceleration 
             self.hw_accel = True
-       
+    
     def load_exp_settings(self, exp_idx):
         # load the requested experiment settings by using the index to find it in the json file
         self.settings = self.load_json(self.exps_json_path)[exp_idx]
@@ -114,6 +114,10 @@ class Experiment:
         self.exp_results_subdir = os.path.join(self.results_dir, self.exp_name)
         if not os.path.exists(self.exp_results_subdir):
             os.makedirs(self.exp_results_subdir)
+
+        # reset previous configurations
+        self.metrics_results = {}
+        self.metrics_results['experiment'] = self.exp_name
 
         return self.exp_name
 
@@ -139,7 +143,7 @@ class Experiment:
         # declare the CSV file path
         self.csv_results_path = os.path.join(self.results_dir, "results.csv")
         # setup the columns for the CSV
-        self.csv_columns = ["experiment", "ccr", "mae", "ms", "rmse", "acc_1off", "spearman", "qwk"]
+        self.csv_columns = ["experiment", "ccr", "mae", "ms", "rmse", "acc_1off", "qwk"]
         # create the CSV file and write the header
         with open(self.csv_results_path, mode='w', encoding='UTF-8', newline='') as csv_file:
             writer = csv.writer(csv_file)
@@ -155,11 +159,12 @@ class Experiment:
             ds_trim = exps_common_settings['ds_trim']
 
         # Splitting the dataset into train, (validation) and test sets
-        self.train_idxs, self.val_idxs, self.test_idxs, self.ds_infos = split_strategy(self.dataset, 
-                                                                                        ratios=split_ratios, 
-                                                                                        pkl_file=self.ds_split_pkl, 
-                                                                                        rseed=self.seed)
-        
+        split = split_strategy(self.dataset, 
+                                ratios=split_ratios, 
+                                pkl_file=self.ds_split_pkl, 
+                                rseed=self.seed)
+        self.train_idxs, self.val_idxs, self.test_idxs, self.ds_infos = split
+
         # Trim the dataset size if requested
         if ds_trim < 1.0:
             self.train_idxs, self.val_idxs, self.test_idxs = trim_sets(self.train_idxs,
@@ -172,11 +177,7 @@ class Experiment:
         nn_batch_size = self.settings['nn_batch_size']
 
         # Create the train, (val) and test sets to feed the neural networks
-        #self.train_ds = HDF5Dataset(self.dataset, self.train_idxs, batch_size=nn_batch_size, augmentation=aug_train_ds).create_dataset()
-        #self.val_ds = HDF5Dataset(self.dataset, self.val_idxs, batch_size=nn_batch_size).create_dataset()
-        #self.test_ds = HDF5Dataset(self.dataset, self.test_idxs, batch_size=nn_batch_size).create_dataset()
-
-        self.train_ds = create_tf_dataset(self.dataset, self.train_idxs, batch_size=nn_batch_size, is_training=True, aug=aug_train_ds)
+        self.train_ds = create_tf_dataset(self.dataset, self.train_idxs, batch_size=nn_batch_size, is_train=True, aug=aug_train_ds)
         self.val_ds = create_tf_dataset(self.dataset, self.val_idxs, batch_size=nn_batch_size)
         self.test_ds = create_tf_dataset(self.dataset, self.test_idxs, batch_size=nn_batch_size)
         
@@ -202,7 +203,7 @@ class Experiment:
     def generate_split_charts(self, charts=None, per_exp=False):
         if self.ds_infos is not None:
             if charts is None:
-                charts = ["fdistr", "pdistr", "ldistr"]
+                charts = ["pdistr", "lsdistr_pie", "ldistr"]
             
             # get the output mode
             display, save = self.output_mode
@@ -212,13 +213,6 @@ class Experiment:
                 
             if "splitinfo" in charts:
                 print_split_ds_info(self.ds_infos)
-            
-            if "fdistr" in charts:
-                pfs = plot_frames_split(self.ds_infos, log_scale=True, display=display)
-                if save:
-                    chart_file_path = os.path.join(save_path, "split_per_frames.png")
-                    pfs.savefig(chart_file_path)
-                    plt.close()
 
             if "pdistr" in charts:
                 pps = plot_patients_split(self.ds_infos, display=display)
@@ -227,12 +221,22 @@ class Experiment:
                     pps.savefig(chart_file_path)
                     plt.close()
 
-            if "ldistr" in charts:
-                pld = plot_labels_distr(self.y_train_ds, self.y_val_ds, self.y_test_ds, display=display)
+            if "lsdistr_pie" in charts:
+                pfpc = plot_fdistr_per_class_pie(self.y_train_ds, self.y_val_ds, self.y_test_ds, display=display)
+                #pfpc = plot_fdistr_per_class(self.y_train_ds, self.y_val_ds, self.y_test_ds, display=display)
                 if save:
-                    chart_file_path = os.path.join(save_path, "distr_labels_per_set.png")
+                    chart_file_path = os.path.join(save_path, "frames_distr_per_class.png")
+                    pfpc.savefig(chart_file_path)
+                    plt.close()
+            
+            if "ldistr" in charts:
+                ds_labels = list(self.y_train_ds) + list(self.y_val_ds) + list(self.y_test_ds)
+                pld = plot_labels_distr(ds_labels, display=display)
+                if save:
+                    chart_file_path = os.path.join(save_path, "labels_distr.png")
                     pld.savefig(chart_file_path)
                     plt.close()
+
         else:
             raise Exception('dataset not yet splitted.')
 
@@ -325,7 +329,7 @@ class Experiment:
         if summary:
             model.summary()
 
-    def nn_model_train(self, model, gradcam_freq=5, gradcam_show=False):
+    def nn_model_train(self, model, gradcam_freq=5, gradcam_show=False, status=None):
         # parameters
         epochs = self.settings['nn_epochs']
         batch_size = self.settings['nn_batch_size']
@@ -346,9 +350,12 @@ class Experiment:
         #     os.makedirs(gradcams_dir_path)
         # gradcam = GradCAMCallback(model, self.last_conv_layer, self.val_ds, freq=gradcam_freq, show_cams=gradcam_show, save_cams=gradcams_dir_path)
         
+        # test
+        update_status = UpdataStatusCallback(status, epochs)
+
         # # callbacks list
         # callbacks = [checkpoint, early_stop, reduce_lr] + [gradcam] * (gradcam_freq > 0)
-        callbacks = [checkpoint, early_stop, reduce_lr]
+        callbacks = [checkpoint, early_stop, reduce_lr, update_status]
         
         # steps
         train_samples = len(self.train_idxs)
@@ -361,13 +368,15 @@ class Experiment:
         if val_samples % batch_size != 0:
             val_steps += 1
 
+        # .as_numpy_iterator()
+
         # =============== Neural Network Fit ===============
-        history = model.fit(self.train_ds.as_numpy_iterator(), 
+        history = model.fit(self.train_ds,
                             shuffle=True,
                             epochs=epochs,
                             steps_per_epoch=train_steps,
                             class_weight=self.train_class_weights,
-                            validation_data=self.val_ds.as_numpy_iterator(),
+                            validation_data=self.val_ds,
                             validation_steps=val_steps,
                             callbacks=callbacks,
                             verbose=self.verbose,
@@ -439,15 +448,15 @@ class Experiment:
             test_steps += 1
 
         # TODO: check if evaluate give same results as manual metrics computing
-        model.evaluate(self.test_ds.as_numpy_iterator(), 
-                       steps=test_steps,
-                       max_queue_size=self.max_queue_size,
-                       workers=self.workers,
-                       use_multiprocessing=False,
-                       verbose=self.verbose)
+        # model.evaluate(self.test_ds, 
+        #                steps=test_steps,
+        #                max_queue_size=self.max_queue_size,
+        #                workers=self.workers,
+        #                use_multiprocessing=False,
+        #                verbose=self.verbose)
         
         # get the predictions by running the model inference
-        y_test_pred = model.predict(self.test_ds.as_numpy_iterator(), 
+        y_test_pred = model.predict(self.test_ds, 
                                     steps=test_steps,
                                     max_queue_size=self.max_queue_size,
                                     workers=self.workers,
@@ -489,9 +498,7 @@ class Experiment:
             cfmat_fig.savefig(cfmat_fig_path)
         plt.close()
 
-        # Save results on the csv
-        # add the experiment name to the result dictionary
-        self.metrics_results['experiment'] = self.exp_name
+        # Save results on the csv        
         # get the list of values to insert into the columns
         values_columns = [self.metrics_results.get(column, '-') for column in self.csv_columns]
         
