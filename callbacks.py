@@ -2,47 +2,29 @@ import os
 import numpy as np
 import tensorflow as tf
 import keras 
-from sklearn.preprocessing import normalize
 import matplotlib
 import matplotlib.pyplot as plt
 
-class UpdataStatusCallback(keras.callbacks.Callback):
-    def __init__(self, status, epochs):
-        super(UpdataStatusCallback, self).__init__()
-        self.status = status[0]
-        self.curr_mess = status[1]
-        self.epochs = epochs
-
-    def on_epoch_begin(self, epoch, logs=None):
-        curr_epoch = epoch + 1
-        new_mess = f'{self.curr_mess}[{curr_epoch}/{self.epochs}]...'
-        self.status.update(new_mess)
-        
 class GradCAMCallback(tf.keras.callbacks.Callback):
     def __init__(self, 
                  model, 
-                 layer_name, 
-                 val_data, 
-                 num_classes=4, 
-                 nsamples_per_class=1, 
-                 freq=5, 
-                 show_cams=True,
-                 save_cams=None):
+                 experiment,
+                 nsamples_per_class = 1, 
+                 freq = 5):
         super(GradCAMCallback, self).__init__()
         self.model = model
-        self.layer_name = layer_name
-        self.val_data = val_data
-        self.num_classes = num_classes
+        self.num_classes = experiment.ds_num_classes
+        self.conv_layer_name = experiment.last_conv_layer
+        self.val_data = experiment.x_val
+        self.show_cams = experiment.output_mode[0]
+        self.save_cams = experiment.output_mode[1]
         self.freq = freq
-        self.show_cams = show_cams
-        self.save_cams = save_cams
-
+        
         # gather 'x' samples for each class
         self.samples_per_class = self.get_classes_samples(nsamples_per_class)
 
-        # compute target class for OBD
-        target_class = tf.ones((self.num_classes, self.num_classes - 1), dtype=tf.float32)
-        self.obd_target_class = 1 - tf.linalg.band_part(target_class, 0, -1) 
+        # compute gradcams save path
+        self.gradcams_save_path = os.path.join(experiment.exp_results_subdir, "gradcams/")
         
     def on_epoch_end(self, epoch, logs=None):
         if (epoch + 1) % self.freq == 0:
@@ -50,7 +32,7 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
 
             for label, sample in self.samples_per_class.items():
                 image_array = self.get_img_array(sample[0])
-                gradcam = self.make_gradcam_heatmap(image_array, self.model, self.layer_name, pred_index=label)
+                gradcam = self.make_gradcam_heatmap(image_array, self.model, self.conv_layer_name, pred_index=label)
                 gradcam_img_merged = self.merge_gradcam(sample[0], gradcam)
                 images_with_gradcam.append(gradcam_img_merged)
 
@@ -64,32 +46,32 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
 
             if self.show_cams:
                 plt.show()
-            
-            if self.save_cams is not None:
-                current_gradcam_path = os.path.join(self.save_cams, f"gradcam_epoch_{epoch}.png")
+
+            if self.save_cams:
+                if not os.path.exists(self.gradcams_save_path):
+                    os.makedirs(self.gradcams_save_path)
+                current_gradcam_path = os.path.join(self.gradcams_save_path, f"gradcam_epoch_{epoch+1}.png")
                 plt.savefig(current_gradcam_path)
             
             plt.close()
 
     def get_classes_samples(self, nsamples_per_class=1):
-        # Dizionario per tenere traccia dei campioni estratti per ciascuna classe
         samples_per_class = {0: [], 1: [], 2: [], 3: []}
 
-        # Indice del batch da esaminare
-        batch_index = 0
+        iterator = iter(self.val_data)
 
         while True:
             try:
-                images, labels = self.val_data[batch_index]
+                images, labels = next(iterator)
+
                 for image, label in zip(images, labels):
                     class_index = tf.argmax(label).numpy()
                     if len(samples_per_class[class_index]) < nsamples_per_class:
                         samples_per_class[class_index].append(image)
-                
+
                 if all(len(samples) >= nsamples_per_class for samples in samples_per_class.values()):
                     break
-                
-                batch_index += 1
+
             except StopIteration:
                 break
     
@@ -173,3 +155,16 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
         superimposed_img = keras.utils.array_to_img(superimposed_img)
 
         return superimposed_img
+
+
+class UpdataRichStatusBarCallback(keras.callbacks.Callback):
+    def __init__(self, status_bar, epochs):
+        super(UpdataRichStatusBarCallback, self).__init__()
+        self.status_bar = status_bar[0]
+        self.curr_mess = status_bar[1]
+        self.epochs = epochs
+
+    def on_epoch_begin(self, epoch, logs=None):
+        curr_epoch = epoch + 1
+        new_mess = f'{self.curr_mess}[{curr_epoch}/{self.epochs}]...'
+        self.status_bar.update(new_mess)

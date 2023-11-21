@@ -10,7 +10,11 @@
 # dataset
 *.h5
 dataset/*
+splitdata.pkl
 
 # neural network
 weights/*
 results/*
+
+# tensorboard
+logs/fit/*

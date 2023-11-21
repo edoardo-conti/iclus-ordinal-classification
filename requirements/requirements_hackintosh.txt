@@ -2,6 +2,7 @@ rich
 tqdm
 h5py
 keras
+keras-cv
 matplotlib
 scikit-learn
 seaborn

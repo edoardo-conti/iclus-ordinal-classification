@@ -7,21 +7,21 @@ from clm import CumulativeLinkModel
 class NeuralNetwork:
     def __init__(self, 
                  ds_img_size:int = 224,
-                 ds_num_ch:int = 3,
+                 ds_img_channels:int = 3,
                  ds_num_classes:int = 4,
                  nn_backbone:str = '',
                  nn_dropout:float = 0.0,
                  nn_activation:str = 'relu',
-                 clm_link_function:str = 'logit',
+                 clm_link:str = 'logit',
                  clm_use_tau:bool = True,
                  obd_hidden_size:int = 512):
         self.size = ds_img_size
-        self.num_channels = ds_num_ch
+        self.num_channels = ds_img_channels
         self.num_classes = ds_num_classes
         self.nn_backbone = nn_backbone
         self.dropout = nn_dropout
         self.activation = nn_activation
-        self.clm_link_function = clm_link_function
+        self.clm_link = clm_link
         self.use_tau = clm_use_tau
         self.obd_hidden_size = obd_hidden_size
 
@@ -66,7 +66,7 @@ class NeuralNetwork:
                 layer.trainable = False
 
         return vgg16
-
+    
     def _resnet18_convnet(self, input_shape):
         def _resnet_block(x, filters: int, kernel_size=3, init_scheme='he_normal', down_sample=False):
             strides = [2, 1] if down_sample else [1, 1]
@@ -208,7 +208,7 @@ class NeuralNetwork:
         # set up the Cumulative Link Model with the network parameters
         x = keras.layers.Dense(1)(x)
         x = keras.layers.BatchNormalization()(x)
-        x = CumulativeLinkModel(self.num_classes, self.clm_link_function, use_tau=self.use_tau)(x)
+        x = CumulativeLinkModel(self.num_classes, self.clm_link, use_tau=self.use_tau)(x)
 
         # build the keras neural network model
         model = keras.models.Model(conv_net.input, x, name="clm")

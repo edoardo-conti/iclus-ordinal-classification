@@ -1,5 +1,16 @@
+import os
+import pickle
 import numpy as np
 import matplotlib.pyplot as plt
+
+def save_split_data(split_data, exps_result_dir):
+    with open('splitdata.pkl', 'wb') as file:
+        pickle.dump(split_data, file)
+
+def load_split_data(exps_result_dir):
+    with open('splitdata.pkl', 'rb') as file:
+        data = pickle.load(file)   
+    return data['train'], data['val'], data['test'], data['metadata']
 
 def print_split_ds_info(ds_info):
     # Print textual split information
@@ -86,6 +97,7 @@ def plot_fdistr_per_class(y_train_ds, y_val_ds, y_test_ds, display=False):
     
     return plt.gcf()
 
+
 def plot_fdistr_per_class_pie(y_train_ds, y_val_ds, y_test_ds, display=False):
     sets = ['Train', 'Validation', 'Test']
     datasets = [y_train_ds, y_val_ds, y_test_ds]
@@ -96,20 +108,23 @@ def plot_fdistr_per_class_pie(y_train_ds, y_val_ds, y_test_ds, display=False):
         class_counts = np.bincount(datasets[i])
         labels = np.arange(len(class_counts)).astype(int)
 
-        wedges, _, _ = axes[i].pie(class_counts, labels=labels, autopct='%1.1f%%', startangle=90)
+        wedges, _, autotexts = axes[i].pie(class_counts, labels=labels, autopct=lambda p: '{:.1f}%\n({:.0f})'.format(p, p * sum(class_counts) / 100), startangle=90)
         axes[i].set_title(f'{set_name} Set')
 
-     # Creazione di una legenda unica per tutta la figura
+        # Aggiungi etichette con il numero di frame per ogni fetta
+        #for autotext in autotexts:
+            #autotext.set_color('white')  # Imposta il colore del testo a bianco per una migliore leggibilità
+
+    # Creazione di una legenda unica per tutta la figura
     legend_labels = [f'Class {label}' for label in labels]
     fig.legend(wedges, legend_labels, title='Classes', loc='lower center', ncol=len(set_name))
 
     plt.suptitle('Frames distribution in sets for each class', y=1.05)
-    #plt.subplots_adjust(bottom=0.3)
-    
+
     # display the plot
     if display:
         plt.show()
-    
+
     return plt.gcf()
 
 def plot_labels_distr(labels, display=False):
@@ -131,3 +146,75 @@ def plot_labels_distr(labels, display=False):
         plt.show()
     
     return plt.gcf()
+
+def labels_distr_per_center(pkl_file, centers):
+    if os.path.exists(pkl_file):
+        # If the pickle file exists, load the data from it
+        with open(pkl_file, 'rb') as f:
+            data = pickle.load(f)
+            medical_center_patients = data['medical_center_patients']
+            data_map_idxs_pcm = data['data_map_idxs_pcm']
+            labels = data['labels']
+
+    # Initialize a dictionary to collect indexes and labels for each medical center
+    centers_data = {center: {'idxs': [], 'labels': []} for center in centers}
+
+    # Retrieve indices for each patient in each medical center
+    for center in centers:
+        center_patients = medical_center_patients[center]
+        for patient in center_patients:
+            key = (patient, center)
+            if key in data_map_idxs_pcm:
+                idxs = data_map_idxs_pcm[key]
+                centers_data[center]['idxs'].extend(idxs)
+
+    # Manually extract labels from indexes
+    for center, data in centers_data.items():
+        centers_data[center]['labels'] = [labels[idx] for idx in data['idxs']]
+
+    # Histogram plot for each medical center
+    for center, data in centers_data.items():
+        plt.hist(data['labels'], bins=np.arange(min(data['labels']), max(data['labels']) + 1.5) - 0.5, rwidth=0.8, alpha=0.75)
+        plt.xlabel('Label')
+        plt.ylabel('Frequency')
+        plt.title(f'Histogram of labels for: {center}')
+        plt.xticks(np.arange(min(data['labels']), max(data['labels']) + 1))
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.show()
+
+def plot_charts(exp, charts, display, save, save_path):
+    # create the charts subfolder 
+    charts_path = os.path.join(save_path, 'charts/') 
+    os.makedirs(charts_path, exist_ok=True)
+
+    if "splitinfo" in charts:
+        print_split_ds_info(exp.dataset_metadata)
+
+    if "pdistr" in charts:
+        pps = plot_patients_split(exp.dataset_metadata, display=display)
+        if save:
+            chart_file_path = os.path.join(charts_path, "split_per_patients.png")
+            pps.savefig(chart_file_path)
+            plt.close()
+
+    if "lsdistr_pie" in charts:
+        pfpcp = plot_fdistr_per_class_pie(exp.y_train, exp.y_val, exp.y_test, display=display)
+        if save:
+            chart_file_path = os.path.join(charts_path, "frames_distr_per_class_pie.png")
+            pfpcp.savefig(chart_file_path)
+            plt.close()
+    
+    if "lsdistr" in charts:
+        pfpc = plot_fdistr_per_class(exp.y_train, exp.y_val, exp.y_test, display=display)
+        if save:
+            chart_file_path = os.path.join(charts_path, "frames_distr_per_class.png")
+            pfpc.savefig(chart_file_path)
+            plt.close()
+
+    if "ldistr" in charts:
+        ds_labels = list(exp.y_train) + list(exp.y_val) + list(exp.y_test)
+        pld = plot_labels_distr(ds_labels, display=display)
+        if save:
+            chart_file_path = os.path.join(charts_path, "labels_distr.png")
+            pld.savefig(chart_file_path)
+            plt.close()

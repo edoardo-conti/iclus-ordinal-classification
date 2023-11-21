@@ -37,29 +37,38 @@ class Logger:
     def print_ds_splitting(self):
         self.check_exp()
 
-        train_f_count = len(self.exp.train_idxs)
-        val_f_count = len(self.exp.val_idxs)
-        test_f_count = len(self.exp.test_idxs)
+        train_f_count = len(self.exp.idxs_train)
+        val_f_count = len(self.exp.idxs_val)
+        test_f_count = len(self.exp.idxs_test)
         ds_f_count = len(self.exp.dataset)
         tot_f_count = train_f_count + val_f_count + test_f_count
+
+        #ds_us = self.exp.settings['ds_us']
 
         train_f_p = round((train_f_count / tot_f_count) * 100)
         val_f_p = round((val_f_count / tot_f_count) * 100)
         test_f_p = 100 - (train_f_p + val_f_p)
         
-        __ds_str = f"Dataset: {self.exp.dataset.total_videos} videos and {self.exp.dataset.total_frames} frames (from file: {self.args.dataset})\n"
-        __split_red_str = "Dataset trimming: [bold cyan]OFF[/bold cyan] (using the [bold cyan]100%[/bold cyan] of the dataset)\n\n"
+        __ds_str = f"Dataset: {self.exp.dataset.total_videos} videos and {self.exp.dataset.total_frames} frames (from file: [magenta]{self.args.dataset}[/magenta])\n"
+        # __split_us_str = ""
+        # if ds_us:
+        #     if '2' in ds_us:
+        #         __split_us_str = f"Dataset undersampling: [bold cyan]ON[/bold cyan] (using the 2nd minority class)\n"
+        #     else:
+        #         __split_us_str = f"Dataset undersampling: [bold cyan]ON[/bold cyan] (using the minority class)\n"
+        __split_trim_str = "Dataset trimming: [bold cyan]OFF[/bold cyan] (using the [bold cyan]100%[/bold cyan] of the dataset)\n\n"
         if ds_f_count != tot_f_count:
             # dataset trimming
             red_perc = round(tot_f_count * 100 / ds_f_count)
-            __split_red_str = f"Dataset trimming: [bold cyan]ON[/bold cyan] (using the [bold cyan]{red_perc}%[/bold cyan] of the dataset)\n\n"
-        
+            __split_trim_str = f"Dataset trimming: [bold cyan]ON[/bold cyan] (using the [bold cyan]{red_perc}%[/bold cyan] of the dataset)\n\n"
+            
         __split_train_str = f"Training set\t= {train_f_count} frames ([bold cyan]{train_f_p}%[/bold cyan])\n"
         __split_val_str = f"Validation set\t= {val_f_count} frames ([bold cyan]{val_f_p}%[/bold cyan])\n"
         __split_test_str = f"Test set\t= {test_f_count} frames ([bold cyan]{test_f_p}%[/bold cyan])\n\n"
         __split_cw_str = f"Training set class weights: {self.exp.train_class_weights}"
-        __split_panel_content = __ds_str + __split_red_str + __split_train_str + __split_val_str + __split_test_str + __split_cw_str
-        
+        # __split_panel_content = __ds_str + __split_us_str + __split_trim_str + __split_train_str + __split_val_str + __split_test_str + __split_cw_str
+        __split_panel_content = __ds_str + __split_trim_str + __split_train_str + __split_val_str + __split_test_str + __split_cw_str
+
         __split_panel = Panel(__split_panel_content, title='[bold]Dataset[/bold]', highlight=True)
         
         print(__split_panel)

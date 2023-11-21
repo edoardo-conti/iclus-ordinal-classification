@@ -2,19 +2,20 @@ import os
 import shutil
 import json
 import csv
+from datetime import datetime
 from typing import Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.utils.class_weight import compute_class_weight
 from keras import backend as K
-from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-from dataset import RichHDF5Dataset, split_strategy, trim_sets, create_tf_dataset
-from utilities import print_split_ds_info, plot_patients_split, plot_fdistr_per_class_pie, plot_fdistr_per_class, plot_labels_distr
+from keras.callbacks import TensorBoard, BackupAndRestore, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
+from dataset import HDF5Dataset, TFDataset, load_ds_metadata, split_by_patients, split_by_centers, rus, trim_sets
+from utilities import save_split_data, load_split_data, plot_charts
 from network import NeuralNetwork
 from losses import make_cost_matrix, qwk_loss, ordinal_distance_loss
 from metrics import Metrics
-from gradcam import GradCAMCallback, UpdataStatusCallback
+from callbacks import GradCAMCallback, UpdataRichStatusBarCallback
 
 class Experiment:
     def __init__(self, 
@@ -24,6 +25,7 @@ class Experiment:
                  ds_split_pkl:str,
                  results_dir:str,
                  workers:int = 1,
+                 shuffle_buffer_size:int = 100,
                  max_queue_size:int = 512,
                  verbose:int = 1,
                  output_mode:Tuple[int, int] = (0, 1),
@@ -36,6 +38,7 @@ class Experiment:
         self.ds_map_pkl = ds_map_pkl
         self.ds_split_pkl = ds_split_pkl
         self.results_dir = results_dir
+        self.shuffle_buffer_size = shuffle_buffer_size
         self.max_queue_size = max_queue_size
         self.workers = workers
         self.verbose = verbose
@@ -46,31 +49,32 @@ class Experiment:
         self.hw_accel = False
         self.settings = None
         self.exp_name = ''
-        self.exp_results_subdir = None
-        self.csv_results_path = None
+        self.exp_results_subdir = ''
+        self.csv_results_path = ''
         self.csv_columns = []
 
         # =========================
         # ======== dataset ========
         # =========================
         self.ds_img_size = input_size
-        self.ds_num_channels = num_channels
+        self.ds_img_channels = num_channels
         self.ds_num_classes = num_classes
         self.dataset = None
-        self.ds_infos = None
+        self.dataset_labels = None
+        self.dataset_metadata = None
         self.train_class_weights = None
         # ======= train set =======
-        self.train_ds = None
-        self.train_idxs = None
-        self.y_train_ds = None
+        self.idxs_train = None
+        self.x_train = None
+        self.y_train = None
         # ===== validation set ====
-        self.val_ds = None
-        self.val_idxs = None
-        self.y_val_ds = None
+        self.idxs_val = None
+        self.x_val = None
+        self.y_val = None
         # ======= test set ========
-        self.test_ds = None
-        self.test_idxs = None
-        self.y_test_ds = None
+        self.idxs_test = None
+        self.x_test = None
+        self.y_test = None
         
         # =========================
         # ==== neural network =====
@@ -79,6 +83,7 @@ class Experiment:
         self.train_metrics_exl = ['top_2_acc', 'top_3_acc', 'ms', 'spearman', 'qwk']
         self.metrics_results = {}
     
+
     def build(self):
         # setting os environment
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
@@ -87,22 +92,27 @@ class Experiment:
         self.load_dataset()
         self.init_results()
     
+
     def load_json(self, json_file_path):
         with open(json_file_path, 'rb') as file:
             return json.load(file)
 
-    def check_hw_accel(self):
-        gpu_count = len(tf.config.list_physical_devices('GPU')) > 0
-        if gpu_count: 
-            # Set the device to GPU 0
-            cpu = tf.config.list_physical_devices('CPU')[0]
-            gpu = tf.config.list_physical_devices('GPU')[0]
-            tf.config.set_visible_devices([gpu,cpu])
-            tf.config.experimental.set_memory_growth(gpu, True)
 
-            # set the class attribute regarding the hw acceleration 
+    def check_hw_accel(self):
+        gpu_devices = tf.config.list_physical_devices('GPU')
+
+        if gpu_devices:
+            # add CPU 0 and GPU 0 to the available devices
+            cpu_device = tf.config.list_physical_devices('CPU')[0]
+            gpu_device = gpu_devices[0]
+            
+            tf.config.set_visible_devices([gpu_device, cpu_device])
+            tf.config.experimental.set_memory_growth(gpu_device, True)
+
+            # set the class attribute regarding the hardware acceleration 
             self.hw_accel = True
     
+
     def load_exp_settings(self, exp_idx):
         # load the requested experiment settings by using the index to find it in the json file
         self.settings = self.load_json(self.exps_json_path)[exp_idx]
@@ -112,167 +122,173 @@ class Experiment:
 
         # create the experiment results subdirectory
         self.exp_results_subdir = os.path.join(self.results_dir, self.exp_name)
-        if not os.path.exists(self.exp_results_subdir):
-            os.makedirs(self.exp_results_subdir)
+        os.makedirs(self.exp_results_subdir, exist_ok=True)
 
         # reset previous configurations
         self.metrics_results = {}
         self.metrics_results['experiment'] = self.exp_name
-
+        
         return self.exp_name
 
+
     def build_exp_name(self):
-        excl_params = ["ds_split_ratios", "ds_trim", "metrics"]
+        # parameters not to be used to generate the experiment name
+        excl_params = ["ds_split_ratio", "ds_trim", "metrics"]
         experiment_params = {key: value for key, value in self.settings.items() if key not in excl_params}
 
-        # Generate the experiment name based on the parameters
+        # generate the experiment name based on the parameters
         exp_name = "_".join(str(value) for value in experiment_params.values())
 
         return exp_name
-        
+    
+
     def load_dataset(self):
-        if self.dataset is None:
-            self.dataset = RichHDF5Dataset(self.dataset_h5, self.ds_map_pkl)
+        self.dataset = HDF5Dataset(self.dataset_h5, self.ds_map_pkl)
+        self.dataset_labels = load_ds_metadata(self.dataset, self.ds_split_pkl, only_labels=True)
+
 
     def init_results(self):
-        # clean the previous results and re-make the directory
-        if os.path.exists(self.results_dir):
-            shutil.rmtree(self.results_dir)
-        os.makedirs(self.results_dir)
-
-        # declare the CSV file path
+        # declare the CSV file path and columns
         self.csv_results_path = os.path.join(self.results_dir, "results.csv")
-        # setup the columns for the CSV
         self.csv_columns = ["experiment", "ccr", "mae", "ms", "rmse", "acc_1off", "qwk"]
-        # create the CSV file and write the header
-        with open(self.csv_results_path, mode='w', encoding='UTF-8', newline='') as csv_file:
-            writer = csv.writer(csv_file)
-            writer.writerow(self.csv_columns)
+        
+        # experiments checkpoint file 
+        if not os.path.exists('run_checkpoint.txt'):
+            # clean the previous results and re-make the directory
+            if os.path.exists(self.results_dir):
+                shutil.rmtree(self.results_dir)
+            os.makedirs(self.results_dir)
+
+            # remove previous logs/ and weights/ directories
+            for directory in ['./logs/', './weights/']:
+                if os.path.exists(directory):
+                    shutil.rmtree(directory)
+
+            # create the CSV file and write the header
+            with open(self.csv_results_path, mode='w', encoding='UTF-8', newline='') as csv_file:
+                writer = csv.writer(csv_file)
+                writer.writerow(self.csv_columns)
+
+    
+    def check_exps_ckp(self, curr_exp):
+        ret_val = False
+
+        if os.path.exists('run_checkpoint.txt'):
+            with open('run_checkpoint.txt', 'r', encoding='UTF-8') as ckp_file:
+                for line in ckp_file:
+                    ckp_exp = line.split()[0]
+                    if ckp_exp == curr_exp:
+                        ret_val = True
+
+        return ret_val
+
 
     def split_dataset(self, exps_common_settings=None):
-        # Gathering the needed settings
-        if exps_common_settings is None:
-            split_ratios = self.settings['ds_split_ratios']
-            ds_trim = self.settings['ds_trim']
-        else:
-            split_ratios = exps_common_settings['ds_split_ratios']
-            ds_trim = exps_common_settings['ds_trim']
+        # gather the needed settings
+        settings_params = ['ds_split_ratio', 'ds_trim', 'ds_split_by', 'ds_us']
+        settings = exps_common_settings if exps_common_settings else self.settings
+        split_ratio, ds_trim, split_by, ds_us = [settings[key] for key in settings_params]
+        
+        # split the dataset into train, (validation) and test sets
+        split_method = split_by_patients if split_by == 'patient' else split_by_centers
+        split = split_method(self.dataset, ratio=split_ratio, pkl_file=self.ds_split_pkl, rseed=self.seed)
+        self.idxs_train, self.idxs_val, self.idxs_test, self.dataset_metadata = split
+        
+        # training set random undersampling
+        if ds_us:
+            y_train = self.dataset_labels[self.idxs_train]
+            if 'rus' in ds_us:
+                self.idxs_train, self.y_train = rus(self.idxs_train, y_train, strategy=ds_us, rseed=self.seed)
+        
+        # trim the dataset if requested
+        if ds_trim > 0:
+            trimmed_sets = trim_sets(self.idxs_train, self.idxs_val, self.idxs_test, ds_trim)
+            self.idxs_train, self.idxs_val, self.idxs_test = trimmed_sets
+        
+        # extract the train, val and test set labels
+        self.y_train = self.dataset_labels[self.idxs_train]
+        self.y_val = self.dataset_labels[self.idxs_val]
+        self.y_test = self.dataset_labels[self.idxs_test]
+        
+        # export the splitting if shared between experiments
+        if exps_common_settings:
+            split_data = {'train': {'x': self.idxs_train, 'y': self.y_train}, 
+                          'val': {'x': self.idxs_val, 'y': self.y_val}, 
+                          'test': {'x': self.idxs_test, 'y': self.y_test}, 
+                          'metadata': self.dataset_metadata}
+            save_split_data(split_data, self.results_dir)
+    
 
-        # Splitting the dataset into train, (validation) and test sets
-        split = split_strategy(self.dataset, 
-                                ratios=split_ratios, 
-                                pkl_file=self.ds_split_pkl, 
-                                rseed=self.seed)
-        self.train_idxs, self.val_idxs, self.test_idxs, self.ds_infos = split
+    def load_dataset_splitted(self):
+        ltrain, lval, ltest, lmetadata = load_split_data(self.results_dir)
+        self.idxs_train, self.y_train = ltrain['x'], ltrain['y']
+        self.idxs_val, self.y_val = lval['x'], lval['y']
+        self.idxs_test, self.y_test = ltest['x'], ltest['y']
+        self.dataset_metadata = lmetadata
 
-        # Trim the dataset size if requested
-        if ds_trim < 1.0:
-            self.train_idxs, self.val_idxs, self.test_idxs = trim_sets(self.train_idxs,
-                                                                            self.val_idxs,
-                                                                            self.test_idxs,
-                                                                            ds_trim)
 
-    def generate_sets(self, aug_train_ds=True):
-        # Gathering the needed settings and data
-        nn_batch_size = self.settings['nn_batch_size']
-
-        # Create the train, (val) and test sets to feed the neural networks
-        self.train_ds = create_tf_dataset(self.dataset, self.train_idxs, batch_size=nn_batch_size, is_train=True, aug=aug_train_ds)
-        self.val_ds = create_tf_dataset(self.dataset, self.val_idxs, batch_size=nn_batch_size)
-        self.test_ds = create_tf_dataset(self.dataset, self.test_idxs, batch_size=nn_batch_size)
+    def generate_sets(self):
+        # gather the needed settings and data
+        batch_size = self.settings['nn_batch_size']
+        augmentation = self.settings['augmentation']
+        
+        # create the train, (val) and test sets to feed the neural networks
+        self.x_train = TFDataset(self.dataset, 
+                                 self.idxs_train, 
+                                 batch_size=batch_size, 
+                                 buffer_size=self.shuffle_buffer_size, 
+                                 is_train=True, 
+                                 augmentation=augmentation).as_iterator()
+        self.x_val = TFDataset(self.dataset, self.idxs_val, batch_size=batch_size).as_iterator()
+        self.x_test = TFDataset(self.dataset, self.idxs_test, batch_size=batch_size).as_iterator()
+        
         
     def compute_class_weight(self):
-        if self.ds_infos is not None:
-            # Retrieves the dataset's labels
-            ds_labels = self.ds_infos['labels']
-
-            # Extract the train, val and test set labels
-            self.y_train_ds = np.array(ds_labels)[self.train_idxs]
-            self.y_val_ds = np.array(ds_labels)[self.val_idxs]
-            self.y_test_ds = np.array(ds_labels)[self.test_idxs]
-
-            # Calculate class balance using 'compute_class_weight'
-            train_class_weights = compute_class_weight('balanced', 
-                                                        classes=np.unique(self.y_train_ds), 
-                                                        y=self.y_train_ds)
-
-            self.train_class_weights = dict(enumerate(train_class_weights))
-        else:
-            raise Exception('dataset not yet splitted.')
+        # calculate class balance using 'compute_class_weight'
+        train_class_weights = compute_class_weight('balanced', classes=np.unique(self.y_train), y=self.y_train)
+        train_class_weights = np.round(train_class_weights, 4)
+        self.train_class_weights = dict(enumerate(train_class_weights))
+        
     
     def generate_split_charts(self, charts=None, per_exp=False):
-        if self.ds_infos is not None:
-            if charts is None:
-                charts = ["pdistr", "lsdistr_pie", "ldistr"]
+        if self.dataset_metadata is not None:
+            # default graphs
+            charts = charts or ["pdistr", "lsdistr_pie", "ldistr"]
             
             # get the output mode
             display, save = self.output_mode
 
-            # choose the right save path (global of per-experiment)
+            # select the path to save the graphs (global or per experiment)
             save_path = self.exp_results_subdir if per_exp else self.results_dir
-                
-            if "splitinfo" in charts:
-                print_split_ds_info(self.ds_infos)
-
-            if "pdistr" in charts:
-                pps = plot_patients_split(self.ds_infos, display=display)
-                if save:
-                    chart_file_path = os.path.join(save_path, "split_per_patients.png")
-                    pps.savefig(chart_file_path)
-                    plt.close()
-
-            if "lsdistr_pie" in charts:
-                pfpc = plot_fdistr_per_class_pie(self.y_train_ds, self.y_val_ds, self.y_test_ds, display=display)
-                #pfpc = plot_fdistr_per_class(self.y_train_ds, self.y_val_ds, self.y_test_ds, display=display)
-                if save:
-                    chart_file_path = os.path.join(save_path, "frames_distr_per_class.png")
-                    pfpc.savefig(chart_file_path)
-                    plt.close()
             
-            if "ldistr" in charts:
-                ds_labels = list(self.y_train_ds) + list(self.y_val_ds) + list(self.y_test_ds)
-                pld = plot_labels_distr(ds_labels, display=display)
-                if save:
-                    chart_file_path = os.path.join(save_path, "labels_distr.png")
-                    pld.savefig(chart_file_path)
-                    plt.close()
-
+            plot_charts(self, charts, display, save, save_path)
         else:
             raise Exception('dataset not yet splitted.')
 
+
     def nn_model_build(self):
+        # get the network type: obd, clm, resnet18, cnn128, vgg16
         net_type = self.settings['nn_type']
-        dropout = self.settings['nn_dropout']
+        
+        # get the common networks parameters
+        common_params = {
+            'ds_img_size': self.ds_img_size,
+            'ds_img_channels': self.ds_img_channels,
+            'ds_num_classes': self.ds_num_classes,
+            'nn_dropout': self.settings['nn_dropout']
+        }
 
         if net_type == 'obd':
-            net_backbone = self.settings['nn_backbone']
-            hidden_size = self.settings['obd_hidden_size']
-            
-            net_object = NeuralNetwork(ds_img_size = self.ds_img_size,
-                             ds_num_ch = self.ds_num_channels,
-                             ds_num_classes = self.ds_num_classes,
-                             nn_backbone = net_backbone,
-                             nn_dropout = dropout,
-                             obd_hidden_size = hidden_size)
-
+            net_object = NeuralNetwork(nn_backbone = self.settings['nn_backbone'],
+                                       obd_hidden_size=self.settings['obd_hidden_size'], 
+                                       **common_params)
         elif net_type == 'clm':
-            net_backbone = self.settings['nn_backbone']
-            clm_link_function = self.settings['clm_link_function']
-            clm_use_tau = self.settings['clm_use_tau']
-
-            net_object = NeuralNetwork(ds_img_size = self.ds_img_size,
-                             ds_num_ch = self.ds_num_channels,
-                             ds_num_classes = self.ds_num_classes,
-                             nn_backbone = net_backbone,
-                             nn_dropout = dropout,
-                             clm_link_function = clm_link_function,
-                             clm_use_tau = clm_use_tau)
-
+            net_object = NeuralNetwork(nn_backbone = self.settings['nn_backbone'],
+                                       clm_link=self.settings['clm_link'], 
+                                       clm_use_tau=self.settings['clm_use_tau'], 
+                                       **common_params)
         else:
-            net_object = NeuralNetwork(ds_img_size = self.ds_img_size,
-                             ds_num_ch = self.ds_num_channels,
-                             ds_num_classes = self.ds_num_classes,
-                             nn_dropout = dropout)
+            net_object = NeuralNetwork(**common_params)
 
         # building the defined neural network model 
         model = net_object.build(net_type)
@@ -285,22 +301,22 @@ class Experiment:
 
         return model
     
+
     def nn_model_compile(self, model, summary=False):
         loss = self.settings['loss']
         metrics = self.settings['metrics']
         optimizer = self.settings['optimizer']
         learning_rate = self.settings['learning_rate']
-        weight_decay = self.settings['weight_decay']
         
-        # ============== optimizer ==============
+        # optimizer
         if optimizer == 'Adam':
-            optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=learning_rate, 
-                                                        weight_decay=weight_decay)
+            optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=learning_rate)
         else:
-            optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=learning_rate, 
+            optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=learning_rate,
+                                                       decay=self.settings['weight_decay'],
                                                        momentum=self.settings['momentum'])
         
-        # ================ loss =================
+        # loss function
         if loss == 'ODL':
             loss = ordinal_distance_loss(self.ds_num_classes)
         elif loss == 'CCE':
@@ -309,75 +325,43 @@ class Experiment:
             cost_matrix = K.constant(make_cost_matrix(self.ds_num_classes), dtype=K.floatx())
             loss = qwk_loss(cost_matrix)
         
-        # =============== metrics ===============
+        # metrics
         metrics_t = Metrics(self.ds_num_classes, self.settings['nn_type'], 'train')
-        #train_metrics = [getattr(metrics_t, metric_name) for metric_name in metrics if metric_name not in train_metrics_exl]
+        train_metrics = [getattr(metrics_t, metric_name) for metric_name in metrics if metric_name not in self.train_metrics_exl]
 
-        train_metrics = []
-        for metric_name in metrics:
-            if metric_name not in self.train_metrics_exl:
-                try:
-                    metric = getattr(metrics_t, metric_name)
-                except AttributeError:
-                    metric = metric_name
-                train_metrics.append(metric)
-
-        # =============== compile ===============
+        # compile
         model.compile(optimizer=optimizer, loss=loss, metrics=train_metrics)
 
-        # Print model summary
+        # print model summary
         if summary:
             model.summary()
 
-    def nn_model_train(self, model, gradcam_freq=5, gradcam_show=False, status=None):
+
+    def nn_model_train(self, model, gradcam_freq=5, status_bar=None):
         # parameters
         epochs = self.settings['nn_epochs']
         batch_size = self.settings['nn_batch_size']
-
-        # =============== Callbacks ===============
-        # ModelCheckpoint, saving the best model
+        
+        # callbacks
+        tensorboard = TensorBoard(log_dir=f"logs/fit/{self.exp_name}", histogram_freq=1)
+        backup = BackupAndRestore(backup_dir="backup/")
         checkpoint = ModelCheckpoint(f'weights/{self.exp_name}', monitor='val_loss', save_weights_only=True, save_best_only=True, verbose=self.verbose)
+        early_stop = EarlyStopping(monitor='val_loss', patience=10, verbose=self.verbose)
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=6, min_lr=1e-6, verbose=self.verbose)
+        gradcam = GradCAMCallback(model, self, freq=gradcam_freq) if gradcam_freq > 0 else None
+        update_status = UpdataRichStatusBarCallback(status_bar, epochs) if status_bar is not None else None
 
-        # EarlyStopping, stop training when model has stopped improving
-        early_stop = EarlyStopping(monitor='val_loss', patience=15, verbose=self.verbose)
+        # build callbacks list
+        callbacks = [tensorboard, backup, checkpoint, early_stop, reduce_lr, gradcam, update_status]
+        callbacks = [callback for callback in callbacks if callback is not None]
         
-        # ReduceLROnPlateau, reduce learning rate when model has stopped improving.
-        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=10, min_lr=1e-6, verbose=self.verbose)
-
-        # # GRAD-Cam, showing the gradients activation maps
-        # gradcams_dir_path = os.path.join(self.exp_results_subdir, "gradcams/")
-        # if not os.path.exists(gradcams_dir_path):
-        #     os.makedirs(gradcams_dir_path)
-        # gradcam = GradCAMCallback(model, self.last_conv_layer, self.val_ds, freq=gradcam_freq, show_cams=gradcam_show, save_cams=gradcams_dir_path)
-        
-        # test
-        update_status = UpdataStatusCallback(status, epochs)
-
-        # # callbacks list
-        # callbacks = [checkpoint, early_stop, reduce_lr] + [gradcam] * (gradcam_freq > 0)
-        callbacks = [checkpoint, early_stop, reduce_lr, update_status]
-        
-        # steps
-        train_samples = len(self.train_idxs)
-        train_steps = train_samples // batch_size
-        if train_samples % batch_size != 0:
-            train_steps += 1
-        
-        val_samples = len(self.val_idxs)
-        val_steps = val_samples // batch_size
-        if val_samples % batch_size != 0:
-            val_steps += 1
-
-        # .as_numpy_iterator()
-
-        # =============== Neural Network Fit ===============
-        history = model.fit(self.train_ds,
-                            shuffle=True,
+        # neural network fit
+        history = model.fit(self.x_train,
                             epochs=epochs,
-                            steps_per_epoch=train_steps,
+                            steps_per_epoch=len(self.idxs_train) // batch_size,
                             class_weight=self.train_class_weights,
-                            validation_data=self.val_ds,
-                            validation_steps=val_steps,
+                            validation_data=self.x_val,
+                            validation_steps=len(self.idxs_val) // batch_size,
                             callbacks=callbacks,
                             verbose=self.verbose,
                             max_queue_size=self.max_queue_size,
@@ -387,122 +371,106 @@ class Experiment:
         
         return history
     
+
     def nn_train_graphs(self, history):
         # get the output mode
         display, save = self.output_mode
 
-        # Create a figure with two subplots
-        _, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        # create a figure with two subplots
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
-        # Get the loss and metrics from history
-        history_keys = history.history.keys()
-
-        # Loss subplot
-        for loss in history_keys:
+        # plot loss functions
+        for loss in history.history.keys():
             if loss.endswith('loss'):
                 label = loss
-                if loss.startswith('val_'):
-                    ax1.plot(history.history[loss], label=label, linestyle='--')
-                else:
-                    ax1.plot(history.history[loss], label=label)
+                linestyle = '--' if loss.startswith('val_') else '-'
+                ax1.plot(history.history[loss], label=label, linestyle=linestyle)
+        
         ax1.legend()
         ax1.set_xlabel('epoch')
         ax1.set_ylabel(f'{self.settings["loss"]}')
-        ax1.set_title('Loss - ' + self.exp_name)
+        ax1.set_title(f'Loss - {self.exp_name}')
         ax1.grid()
 
-        # Metrics subplot
-        for metric in history_keys:
+        # plot metrics
+        for metric in history.history.keys():
             if not metric.endswith('loss'):
                 label = metric
-                if metric.startswith('val_'):
-                    ax2.plot(history.history[metric], label=label, linestyle='--')
-                else:
-                    ax2.plot(history.history[metric], label=label)
+                linestyle = '--' if metric.startswith('val_') else '-'
+                ax2.plot(history.history[metric], label=label, linestyle=linestyle)
+
         ax2.legend()
         ax2.set_xlabel('epoch')
         ax2.set_ylabel('metric')
-        ax2.set_title('Metrics - ' + self.exp_name)
+        ax2.set_title(f'Metrics - {self.exp_name}')
         ax2.grid()
 
-        # Show the figure
-        if display:
-            plt.show()
-
+        # save the training charts
         if save:
             train_graphs_path = os.path.join(self.exp_results_subdir, "training_plot.png")
             plt.savefig(train_graphs_path)
         
+        # Show the figure
+        if display:
+            plt.show()
+        
         plt.close()
+
 
     def nn_model_evaluate(self, model, load_best_weights=True):
         # Load the best weights
         if load_best_weights:
             model.load_weights(f'weights/{self.exp_name}')
 
-        # steps
+        # get the batch size
         nn_batch_size = self.settings['nn_batch_size']
-        test_samples = len(self.test_idxs)
-        test_steps = test_samples // nn_batch_size
-        if test_samples % nn_batch_size != 0:
-            test_steps += 1
+
+        # steps
+        #test_samples = len(self.idxs_test)
+        #test_steps = -(-test_samples // nn_batch_size)  # Equivalent to ceil(test_samples / nn_batch_size)
 
         # TODO: check if evaluate give same results as manual metrics computing
-        # model.evaluate(self.test_ds, 
-        #                steps=test_steps,
+        # model.evaluate(self.x_test, 
+        #                steps=len(self.idxs_test) // nn_batch_size,
         #                max_queue_size=self.max_queue_size,
         #                workers=self.workers,
         #                use_multiprocessing=False,
         #                verbose=self.verbose)
         
-        # get the predictions by running the model inference
-        y_test_pred = model.predict(self.test_ds, 
-                                    steps=test_steps,
+        # model evaluation, get the predictions by running the model inference
+        y_test_pred = model.predict(self.x_test, 
+                                    #steps=len(self.idxs_test) // nn_batch_size,
+                                    steps=-(-len(self.idxs_test) // nn_batch_size),
+                                    verbose=self.verbose,
                                     max_queue_size=self.max_queue_size,
                                     workers=self.workers,
-                                    use_multiprocessing=False,
-                                    verbose=self.verbose)
-
-        # compute the evaluation metrics
+                                    use_multiprocessing=False
+                                    )
+        
+        # compute evaluation metrics
         metrics_e = Metrics(self.ds_num_classes, self.settings['nn_type'], 'eval')
-        #eval_metrics = [getattr(metrics_e, metric_name) for metric_name in ]
+        eval_metrics = [(getattr(metrics_e, metric_name), metric_name) for metric_name in self.settings['metrics']]
         
-        eval_metrics = []
-        for metric_name in self.settings['metrics']:
-            try:
-                metric = getattr(metrics_e, metric_name)
-                metric_name = metric.__name__
-                is_function = True
-            except AttributeError:
-                metric = metric_name
-                is_function = False
-
-            eval_metrics.append((metric, metric_name, is_function))
+        for metric, metric_name  in eval_metrics:
+            result = metric(self.y_test, y_test_pred)
+            result = np.round(result, 4)
+            self.metrics_results[metric_name] = result
         
-        # compute all the metrics
-        for metric, metric_name, is_function in eval_metrics:
-            if is_function:
-                result = metric(self.y_test_ds, y_test_pred)
-                result = np.round(result, 4)
-                self.metrics_results[metric_name] = result
-            else:
-                # TODO: string metric, idk how to do it
-                pass
-        
-        # Test Set Confusion Matrix
-        # get the output mode
+        # test set confusion matrix
         display, save = self.output_mode
-        cfmat_fig = metrics_e.confusion_matrix(self.y_test_ds, y_test_pred, show=display)
+        cfmat_fig = metrics_e.confusion_matrix(self.y_test, y_test_pred, show=display)
         if save:
             cfmat_fig_path = os.path.join(self.exp_results_subdir, "confusion_matrix.png")
             cfmat_fig.savefig(cfmat_fig_path)
         plt.close()
-
-        # Save results on the csv        
-        # get the list of values to insert into the columns
-        values_columns = [self.metrics_results.get(column, '-') for column in self.csv_columns]
         
-        # add data to CSV file
+        # save results on the csv        
+        values_columns = [self.metrics_results.get(column, '-') for column in self.csv_columns]
         with open(self.csv_results_path, mode='a', encoding='UTF-8', newline='') as csv_file:
             writer = csv.writer(csv_file)
             writer.writerow(values_columns)
+
+        # update the experiments checkpoint file 
+        datetime_log = datetime.now().strftime("%m/%d/%Y,%H:%M:%S")
+        with open('run_checkpoint.txt', mode='a', encoding='UTF-8') as ckp_file:
+            ckp_file.write(f"{self.exp_name} {datetime_log}\n")
