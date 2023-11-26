@@ -51,12 +51,18 @@ def main():
     parser.add_argument("--ds_map", type=str, required=True, help="pickle containing the dataset frames indexes mapping")
     parser.add_argument("--ds_split", type=str, required=True, help="pickle containing the dataset infos needed for the splitting")
     parser.add_argument("--results_dir", type=str, default="results/", help="directory used to store the results")
+    parser.add_argument("--eval_only", action='store_true', help="perform only the models's evaluation")
+    parser.add_argument("--weights_path", type=str, help="path to the model weights file")
     parser.add_argument("--buffer_size", type=int, default=100, help="buffer size used to shuffle the training dataset")
     parser.add_argument("--workers", type=int, default=1, help="processes employed when using process-based threading")
     parser.add_argument("--verbose", type=int, default=1, help="verbose intensity for the whole experiment")
     parser.add_argument("--seed", type=int, default=42, help="seed used to initialize the random number generator")
     args = parser.parse_args()
     
+    # sanity check on the arguments
+    if args.weights_path and not args.eval_only:
+        parser.error("--weights_path argument require --eval_only to be specified")
+
     # load the experiments JSON file
     experiments, tot_exps = load_experiments_json(args.exps_json)
 
@@ -74,6 +80,7 @@ def main():
                             ds_map_pkl = args.ds_map,
                             ds_split_pkl = args.ds_split,
                             results_dir = args.results_dir,
+                            eval_only = args.eval_only,
                             workers = args.workers,
                             shuffle_buffer_size = args.buffer_size,
                             verbose = args.verbose,
@@ -137,21 +144,22 @@ def main():
             logger.update_experiment(experiment)
             #logger.print_model_params()
             
-            # update the console status
-            mess = f"[bold green]Training model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]\r"
-            status.update(mess)
-            
             # train the neural network model
-            history = experiment.nn_model_train(model, status_bar=(status, mess))
-            
-            # plot training graphs
-            experiment.nn_train_graphs(history)
+            if not args.eval_only:
+                # update the console status
+                mess = f"[bold green]Training model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]\r"
+                status.update(mess)
+
+                history = experiment.nn_model_train(model, status_bar=(status, mess))
+                
+                # plot training graphs
+                experiment.nn_train_graphs(history)
             
             # update the console status
             status.update(f"[bold green]Evaluating model of experiment '{exp_name}' [{exp_idx+1}/{tot_exps}]\n")
-
+            
             # evaluating the neural network model
-            experiment.nn_model_evaluate(model)
+            experiment.nn_model_evaluate(model, weights=args.weights_path)
 
             # logging the end of the current experiment
             console.log(f"experiment [bold cyan]{exp_name}[/bold cyan] [bold green]completed[/bold green] [{exp_idx + 1}/{tot_exps}]\r")

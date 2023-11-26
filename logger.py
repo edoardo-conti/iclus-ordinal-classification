@@ -24,11 +24,13 @@ class Logger:
     def print_settings(self):
         self.check_exp()
 
+        is_gpu = True if (self.exp.device and 'GPU' == self.exp.device[1]) else False
+
         __exps_str = f"Experiments identified: {len(self.exps)} (from file: [magenta]{self.args.exps_json}[/magenta])\n"
         __results_str = f"Results directory: [magenta]{self.args.results_dir}[/magenta]\n"
         __seed_str = f"Global random seed: {self.args.seed}\n"
         __workers_str = f"Workers: {self.args.workers}\n"
-        __hw_accel_str = f"GPU acceleration: {'[bold green]available' if self.exp.hw_accel else '[bold red]not available'}"
+        __hw_accel_str = f"GPU acceleration: {'[bold green]available' if is_gpu else '[bold red]not available'}"
         __settings_panel_content = __exps_str + __results_str + __seed_str + __workers_str + __hw_accel_str
         __settings_panel = Panel(__settings_panel_content, title='[bold]Settings[/bold]', highlight=True)
         

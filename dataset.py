@@ -1,4 +1,3 @@
-"""Import modules."""
 import os
 import pickle
 import random
@@ -90,27 +89,30 @@ def load_ds_metadata(dataset, pkl_file, only_labels=False):
         # If the pickle file exists, load the data from it
         with open(pkl_file, 'rb') as f:
             data = pickle.load(f)
-            medical_center_patients = data['medical_center_patients']
-            data_index = data['data_index']
-            data_map_idxs_pcm = data['data_map_idxs_pcm']
-            score_counts = data['score_counts']
-            labels = data['labels']
+            medical_center_patients, data_index, data_map_idxs_pcm, score_counts, labels = (
+                data['medical_center_patients'],
+                data['data_index'],
+                data['data_map_idxs_pcm'],
+                data['score_counts'],
+                data['labels']
+            )
     else:
-        # If the pickle file doesn't exist, create the data
+        # if the pickle file doesn't exist, create the data
         medical_center_patients = defaultdict(set)
         data_index = {}
         data_map_idxs_pcm = defaultdict(list)
         score_counts = defaultdict(int)
-        labels = []  # List to store target labels
+        labels = []
 
         for index, (_, _, target_data, patient, medical_center) in enumerate(tqdm(dataset)):
             medical_center_patients[medical_center].add(patient)
             data_index[index] = (patient, medical_center)
-            data_map_idxs_pcm[(patient, medical_center)].append(index)
+            key = (patient, medical_center)
+            data_map_idxs_pcm[key].append(index)
             score_counts[int(target_data[()])] += 1
             labels.append(int(target_data[()]))
         
-        # Save the data to a pickle file if pkl_file is provided
+        # save the data to a pickle file if pkl_file is provided
         if pkl_file:
             data = {
                 'medical_center_patients': medical_center_patients,
@@ -125,18 +127,26 @@ def load_ds_metadata(dataset, pkl_file, only_labels=False):
 
     if only_labels:
         return np.array(labels)
-    
+
     return medical_center_patients, data_index, data_map_idxs_pcm, score_counts, labels
 
 
 class TFDataset():
-    def __init__(self, hdf5_dataset, set_idxs, batch_size=16, buffer_size=100, is_train=False, augmentation=False):
+    def __init__(self, 
+                 hdf5_dataset, 
+                 set_idxs, 
+                 batch_size=16, 
+                 buffer_size=100, 
+                 is_train=False, 
+                 augmentation=False, 
+                 device=None):
         self.hdf5_dataset = hdf5_dataset
         self.set_idxs = set_idxs
         self.batch_size = batch_size
         self.buffer_size = buffer_size
         self.is_train = is_train
         self.augmentation = augmentation
+        self.device = "/GPU:0" # TODO: change to device
 
         # params to be computed
         self.dataset = None
@@ -149,7 +159,7 @@ class TFDataset():
     def data_augmentation(self, frame):
         min_size = min(frame.shape[0], frame.shape[1])
         zoom = 0.2
-
+        
         transform = A.Compose([
             # I. Elastic Warping (verified: better to avoid)
             A.ElasticTransform(alpha=100, sigma=10, alpha_affine=0.1, p=0.0),
@@ -169,27 +179,19 @@ class TFDataset():
 
     def mixup_batch(self, frames, labels):
         mixup = keras_cv.layers.MixUp()
-
         labels = self.label_smooth(labels)
-        
         mixed_batch = mixup({'images': frames, 'labels': labels})
-
         return mixed_batch['images'], mixed_batch['labels']
 
     def _process_frames(self, frame_data, target_data):
         frame_tensor = tf.cast(frame_data, tf.float32) / 255.0
-        
         label = tf.squeeze(target_data)
         label_ohe = tf.one_hot(label, depth=4, dtype=tf.int32)
-
         return frame_tensor, label_ohe
-
+    
     def _map_frames(self, index):
-        index = index.numpy()
-        _, frame_data, target_data, _, _ = self.hdf5_dataset[index]
-        
+        _, frame_data, target_data, _, _ = self.hdf5_dataset[index.numpy()]
         frame_data = cv2.resize(frame_data, (224, 224))
-        
         if self.is_train and self.augmentation is True:
             frame_data = self.data_augmentation(frame_data)
 
@@ -272,7 +274,6 @@ def split_by_patients(dataset, ratio=None, th=0.95, pkl_file=None, rseed=42):
         except (KeyError, IndexError):
             del medical_center_patients[center]
 
-        
     # 2.2 validation set
     while (len(val_idxs) < val_frames):
         center = random.choice(list(medical_center_patients.keys()))
@@ -315,16 +316,16 @@ def split_by_centers(dataset, ratio=None, pkl_file=None, rseed=42):
     # Set the random seed for repeatability
     random.seed(rseed)
     
-    if ratios is None:
-        ratios = [0.5, 0.5]
+    if ratio is None:
+        ratio = [0.5, 0.5]
 
-    if len(ratios) == 2:
-        val_ratio, test_ratio = ratios
+    if len(ratio) == 2:
+        val_ratio, test_ratio = ratio
     else:
-        raise ValueError("ratios list must have 2 values that sum to 1.0")
+        raise ValueError("ratio list must have 2 values that sum to 1.0")
 
     # 0. gather the metadata
-    medical_center_patients, _, data_map_idxs_pcm, score_counts, labels = load_dsdata_pickle(dataset, pkl_file)    
+    medical_center_patients, _, data_map_idxs_pcm, score_counts, labels = load_ds_metadata(dataset, pkl_file)    
     # 0.1 setup the returning split infos
     split_info = {'medical_center_patients': medical_center_patients.copy()}
 
@@ -417,20 +418,27 @@ def rus(x_train, y_train, strategy='auto', rseed=42):
     return X_resampled, y_resampled
     
 
-def trim_sets(train, val=[], test=[], perc=1.0):
-    # Compute length of subsets
+def trim_sets(train, test, val=None, perc=1.0, rseed=None):
+    # seed for reproducibility 
+    random.seed(rseed)
+
+    # failsafe
+    if not val:
+        val = []
+
+    # compute lengths of subsets
     num_train_samples = int(len(train) * perc)
     num_test_samples = int(len(test) * perc)
 
-    # Create random subsets
+    # create random subsets
     train_indices = random.sample(range(len(train)), num_train_samples)
     test_indices = random.sample(range(len(test)), num_test_samples)
-    
+
     if val:
         num_val_samples = int(len(val) * perc)
         val_indices = random.sample(range(len(val)), num_val_samples)
-        
+
         return train_indices, val_indices, test_indices
-    
+
     return train_indices, test_indices
     

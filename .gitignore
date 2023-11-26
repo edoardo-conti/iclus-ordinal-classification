@@ -13,7 +13,7 @@ dataset/*
 splitdata.pkl
 
 # neural network
-weights/*
+backup/*
 results/*
 
 # tensorboard

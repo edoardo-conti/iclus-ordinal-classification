@@ -3,7 +3,6 @@
 results_dir="./results"
 logs_dir="./logs"
 backup_dir="./backup"
-weights_dir="./weights"
 split_data_file="./splitdata.pkl"
 checkpoint_file="./run_checkpoint.txt"
 
@@ -31,7 +30,6 @@ delete_file() {
 delete_directory "$results_dir"
 delete_directory "$logs_dir"
 delete_directory "$backup_dir"
-delete_directory "$weights_dir"
 
 # delete files
 delete_file "$split_data_file"

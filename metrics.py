@@ -7,10 +7,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 class Metrics:
-    def __init__(self, num_classes, nn_type, phase):
+    def __init__(self, num_classes, nn_type):
         self.num_classes = num_classes
         self.nn_type = nn_type
-        self.phase = phase
         self.target_class = self._build_obd_target_class()
         
     def _build_obd_target_class(self):
@@ -155,7 +154,7 @@ class Metrics:
         # check the neural network ground truth and prediction
         y_true = self._check_nn_ytrue(y_true)
         y_pred = self._check_nn_ypred(y_pred)
-
+        
         # float32 casting
         y_true = tf.cast(y_true, tf.float32)
         y_pred = tf.cast(y_pred, tf.float32)

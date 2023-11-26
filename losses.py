@@ -51,7 +51,7 @@ def qwk_loss(cost_matrix):
 
         a = tf.cast(K.reshape(K.dot(cost_matrix, K.reshape(sum_prob, shape=[-1, 1])), shape=[-1]), dtype=tf.float32)
         b = tf.cast(K.reshape(n / K.sum(n), shape=[-1]), dtype=tf.float32)
-
+        
         epsilon = 10e-9
 
         denominator = a * b
