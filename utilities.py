@@ -30,40 +30,36 @@ def print_split_ds_info(ds_info):
             frame_count = ds_info['frames_by_center_patient'][medical_center][patient]
             print(f"   {patient}: {frame_count} frames")
 
+def plot_patients_split(dataset_split, display=False):
+    # Estrai i centri medici e i pazienti dai dati
+    centri_medici = list(set([paziente.split('/')[0] for split, pazienti in dataset_split.items() for paziente in pazienti]))
+    sets = list(dataset_split.keys())
 
-def plot_patients_split(ds_info, display=False):
-    # Create data for the plot
-    centers = []
-    train_patient_counts = []
-    val_patient_counts = []
-    test_patient_counts = []
+    # Conta il numero di pazienti per centro medico e set
+    counts = np.zeros((len(centri_medici), len(sets)))
+    for i, centro_medico in enumerate(centri_medici):
+        for j, split in enumerate(sets):
+            counts[i, j] = sum(1 for paziente in dataset_split[split] if paziente.startswith(centro_medico))
 
-    for medical_center in ds_info['medical_center_patients'].keys():
-        centers.append(medical_center)
-        train_patient_count = len(ds_info['train_patients_by_center'][medical_center])
-        val_patient_count = len(ds_info['val_patients_by_center'][medical_center])
-        test_patient_count = len(ds_info['test_patients_by_center'][medical_center])
-        train_patient_counts.append(train_patient_count)
-        val_patient_counts.append(val_patient_count)
-        test_patient_counts.append(test_patient_count)
+    # Crea il grafico a barre impilato
+    plt.figure(figsize=(12, 6))
+    bottom = np.zeros(len(centri_medici))
+    for j, split in enumerate(sets):
+        plt.bar(centri_medici, counts[:, j], bottom=bottom, label=split)
+        bottom += counts[:, j]
 
-    # Create the plot
-    plt.figure(figsize=(10, 6))
-    plt.barh(centers, train_patient_counts, label='Train patients')
-    plt.barh(centers, val_patient_counts, left=train_patient_counts, label='Val patients')
-    plt.barh(centers, test_patient_counts, left=[sum(x) for x in zip(train_patient_counts, val_patient_counts)], label='Test patients')
-
-    # Add labels, title and legend
-    plt.xlabel('Patient Count')
-    plt.ylabel('Medical Center')
-    plt.title('Patient Distribution by Medical Center')
+    plt.title('Patient Distribution by Medical Center in sets')
+    plt.xlabel('Medical center')
+    plt.ylabel('Patient count')
     plt.legend()
+    plt.xticks(rotation=45, ha='right')
 
-    # display the plot
+    # Display the plot
     if display:
         plt.show()
-    
+
     return plt.gcf()
+
 
 def plot_fdistr_per_class(y_train_ds, y_val_ds, y_test_ds, display=False):
     # calculate the class count for each set
@@ -187,28 +183,21 @@ def plot_charts(exp, charts, display, save, save_path):
     charts_path = os.path.join(save_path, 'charts/') 
     os.makedirs(charts_path, exist_ok=True)
 
-    if "splitinfo" in charts:
-        print_split_ds_info(exp.dataset_metadata)
-
+    #if "splitinfo" in charts:
+        #print_split_ds_info(exp.dataset_metadata)
+    
     if "pdistr" in charts:
-        pps = plot_patients_split(exp.dataset_metadata, display=display)
+        pps = plot_patients_split(exp.dataset.split, display=display)
         if save:
             chart_file_path = os.path.join(charts_path, "split_per_patients.png")
             pps.savefig(chart_file_path)
             plt.close()
-
+    
     if "lsdistr_pie" in charts:
         pfpcp = plot_fdistr_per_class_pie(exp.y_train, exp.y_val, exp.y_test, display=display)
         if save:
             chart_file_path = os.path.join(charts_path, "frames_distr_per_class_pie.png")
             pfpcp.savefig(chart_file_path)
-            plt.close()
-    
-    if "lsdistr" in charts:
-        pfpc = plot_fdistr_per_class(exp.y_train, exp.y_val, exp.y_test, display=display)
-        if save:
-            chart_file_path = os.path.join(charts_path, "frames_distr_per_class.png")
-            pfpc.savefig(chart_file_path)
             plt.close()
 
     if "ldistr" in charts:

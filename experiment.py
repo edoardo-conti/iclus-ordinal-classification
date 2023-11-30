@@ -1,126 +1,102 @@
 import os
-import shutil
-import json
 import csv
-from datetime import datetime
-from typing import Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.utils.class_weight import compute_class_weight
 from keras import backend as K
-from keras import mixed_precision
 from keras.callbacks import TensorBoard, BackupAndRestore, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-from dataset import HDF5Dataset, TFDataset, load_ds_metadata, split_by_patients, split_by_centers, rus, trim_sets
-from utilities import save_split_data, load_split_data, plot_charts
-from network import NeuralNetwork
-from losses import make_cost_matrix, qwk_loss, ordinal_distance_loss
-from metrics import Metrics
-from callbacks import GradCAMCallback, UpdataRichStatusBarCallback
+from utilities import plot_charts
+from network.model import NeuralNetwork
+from network.losses import make_cost_matrix, qwk_loss, ordinal_distance_loss
+from network.metrics import Metrics
+from network.callbacks import GradCAMCallback
 
 class Experiment:
     def __init__(self, 
-                 exps_json_path:str,
-                 dataset_path:str,
-                 ds_map_pkl:str,
-                 ds_split_pkl:str,
-                 results_dir:str,
-                 eval_only:bool = False,
-                 workers:int = 1,
-                 shuffle_buffer_size:int = 100,
-                 max_queue_size:int = 512,
-                 verbose:int = 1,
-                 output_mode:Tuple[int, int] = (0, 1),
-                 input_size:int = 224,
-                 num_channels:int = 3,
-                 num_classes:int = 4,
-                 random_state:int = 42):
-        self.exps_json_path = exps_json_path
-        self.dataset_h5 = dataset_path
-        self.ds_map_pkl = ds_map_pkl
-        self.ds_split_pkl = ds_split_pkl
-        self.results_dir = results_dir
-        self.eval_only = eval_only
-        self.shuffle_buffer_size = shuffle_buffer_size
-        self.max_queue_size = max_queue_size
-        self.workers = workers
-        self.verbose = verbose
-        self.output_mode = output_mode
-        self.seed = random_state
-
-        # params to be computed
-        self.device = None
-        self.settings = None
-        self.exp_name = ''
-        self.exp_results_subdir = ''
-        self.csv_results_path = ''
-        self.csv_columns = []
-
-        # =========================
-        # ======== dataset ========
-        # =========================
-        self.ds_img_size = input_size
-        self.ds_img_channels = num_channels
-        self.ds_num_classes = num_classes
-        self.dataset = None
-        self.dataset_labels = None
-        self.dataset_metadata = None
-        self.train_class_weights = None
-        # ======= train set =======
-        self.idxs_train = None
+                 settings:dict,
+                 set_config:dict):
+        self.settings = settings
+        self.set_config = set_config
+        
+        # ======= to compute =======
+        self.exp_name = None
+        self.exp_results_subdir = None       
+        
+        # ======= train set ========
         self.x_train = None
         self.y_train = None
-        # ===== validation set ====
-        self.idxs_val = None
+        self.train_class_weights = None
+        # ===== validation set =====
         self.x_val = None
         self.y_val = None
-        # ======= test set ========
-        self.idxs_test = None
+        # ======= test set =========
         self.x_test = None
         self.y_test = None
         
-        # =========================
-        # ==== neural network =====
-        # =========================
+        # ==== neural network ======
         self.last_conv_layer = None
-        self.train_metrics_exl = ['top_2_acc', 'top_3_acc', 'ms', 'spearman', 'qwk']
+        self.train_metrics_exl = ['ms', 'qwk']
         self.metrics_results = {}
     
 
-    def build(self):
-        # setting os environment
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
-        
-        #TODO: da attivare
-        #tf.config.optimizer.set_jit(True)
-        #policy = mixed_precision.Policy("mixed_float16")
-        #mixed_precision.set_global_policy(policy)
-
-        self.is_gpu_available()
-        self.load_dataset()
-        self.init_results()
+    @property
+    def results_dir(self):
+        return self.set_config.get('results_dir', 'results/')
     
+    @property
+    def dataset(self):
+        return self.set_config.get('dataset', None)
+    
+    @property
+    def output_mode(self):
+        return self.set_config.get('output_mode', (0, 1))
 
-    def load_json(self, json_file_path):
-        with open(json_file_path, 'rb') as file:
-            return json.load(file)
+    @property
+    def ds_img_size(self):
+        return self.set_config.get('ds_img_size', 224)
+
+    @property
+    def ds_img_channels(self):
+        return self.set_config.get('ds_img_channels', 3)
+    
+    @property
+    def ds_num_classes(self):
+        return self.set_config.get('ds_num_classes', 4)
+    
+    @property
+    def verbose(self):
+        return self.set_config.get('verbose', 0)
+    
+    @property
+    def max_qsize(self):
+        return self.set_config.get('max_qsize', 100)
+    
+    @property
+    def workers(self):
+        return self.set_config.get('workers', 1)
+    
+    @property
+    def csv_columns(self):
+        return self.set_config.get('csv_columns', [])
+    
+    @property
+    def csv_results_path(self):
+        return self.set_config.get('csv_results_path', 'results/results.csv')
 
 
-    def is_gpu_available(self):
-        cpu_device = tf.config.list_physical_devices('CPU')[0]
-        gpu_devices = tf.config.list_physical_devices('GPU')
-        
-        if gpu_devices:
-            # "/GPU:0"
-            self.device = gpu_devices[0]
-        else:
-            self.device = cpu_device
+    def build_exp_name(self):
+        # parameters not to be used to generate the experiment name
+        excl_params = ["ds_split_ratio", "metrics"]
+        experiment_params = {key: value for key, value in self.settings.items() if key not in excl_params}
+
+        # generate the experiment name based on the parameters
+        exp_name = "_".join(str(value) for value in experiment_params.values())
+
+        return exp_name
 
 
-    def load_exp_settings(self, exp_idx):
-        # load the requested experiment settings by using the index to find it in the json file
-        self.settings = self.load_json(self.exps_json_path)[exp_idx]
-        
+    def build(self):
         # build the experiment name based on the configuration extracted
         self.exp_name = self.build_exp_name()
         
@@ -132,159 +108,93 @@ class Experiment:
         weights_path = os.path.join(self.exp_results_subdir, 'weights/') 
         os.makedirs(weights_path, exist_ok=True)
 
-        # reset previous configurations
-        self.metrics_results = {}
+        # add the experiment name in the results dictionary
         self.metrics_results['experiment'] = self.exp_name
+
+
+    def split_dataset(self):
+        # gather the needed experiment settings
+        split_ratio, m_rus = [self.settings[key] for key in ['ds_split_ratio', 'ds_mrus']]
         
-        return self.exp_name
+        # split dataset
+        self.dataset.split_dataset(split_ratio)
 
-
-    def build_exp_name(self):
-        # parameters not to be used to generate the experiment name
-        # excl_params = ["ds_split_ratio", "ds_trim", "metrics"]
-        excl_params = ["ds_split_ratio", "metrics"]
-        experiment_params = {key: value for key, value in self.settings.items() if key not in excl_params}
-
-        # generate the experiment name based on the parameters
-        exp_name = "_".join(str(value) for value in experiment_params.values())
-
-        return exp_name
-    
-
-    def load_dataset(self):
-        self.dataset = HDF5Dataset(self.dataset_h5, self.ds_map_pkl)
-        self.dataset_labels = load_ds_metadata(self.dataset, self.ds_split_pkl, only_labels=True)
-
-
-    def init_results(self):
-        # declare the CSV file path and columns
-        self.csv_results_path = os.path.join(self.results_dir, "results.csv")
-        self.csv_columns = ["experiment", "ccr", "mae", "ms", "rmse", "acc_1off", "qwk"]
+        # prepare sets
+        self.x_train, self.y_train = self.dataset.prepare_tfrset('train', random_under_msampler=m_rus)
+        self.x_val, self.y_val = self.dataset.prepare_tfrset('val', random_under_msampler=m_rus)
+        self.x_test, self.y_test = self.dataset.prepare_tfrset('test', random_under_msampler=m_rus)
         
-        # ask for a confirmation
-        confirmation = input("Do you want to delete existing run files? (y/[N]): ").lower()
-        
-        # experiments checkpoint file 
-        if not os.path.exists('run_checkpoint.txt') and confirmation == 'y':
-            # clean the previous results and re-make the directory
-            if os.path.exists(self.results_dir):
-                shutil.rmtree(self.results_dir)
-            os.makedirs(self.results_dir)
-            
-            # remove previous logs/ directory
-            if os.path.exists('./logs/'):
-                shutil.rmtree('./logs/')
-
-            # delete splitting file
-            if os.path.exists("./splitdata.pkl"):
-                os.remove("./splitdata.pkl")
-
-            # create the CSV file and write the header
-            with open(self.csv_results_path, mode='w', encoding='UTF-8', newline='') as csv_file:
-                writer = csv.writer(csv_file)
-                writer.writerow(self.csv_columns)
-        
-        if self.eval_only:
-            # delete splitting file
-            if os.path.exists("./splitdata.pkl"):
-                os.remove("./splitdata.pkl")
-
-    
-    def check_exps_ckp(self, curr_exp):
-        ret_val = False
-
-        if os.path.exists('run_checkpoint.txt'):
-            with open('run_checkpoint.txt', 'r', encoding='UTF-8') as ckp_file:
-                for line in ckp_file:
-                    ckp_exp = line.split()[0]
-                    if ckp_exp == curr_exp:
-                        ret_val = True
-
-        return ret_val
-
-
-    def split_dataset(self, exps_common_settings=None):
-        # gather the needed settings
-        settings_params = ['ds_split_ratio', 'ds_trim', 'ds_split_by', 'ds_us']
-        settings = exps_common_settings if exps_common_settings else self.settings
-        split_ratio, ds_trim, split_by, ds_us = [settings[key] for key in settings_params]
-        
-        # split the dataset into train, (validation) and test sets
-        split_method = split_by_patients if split_by == 'patient' else split_by_centers
-        split = split_method(self.dataset, ratio=split_ratio, pkl_file=self.ds_split_pkl, rseed=self.seed)
-        self.idxs_train, self.idxs_val, self.idxs_test, self.dataset_metadata = split
-        
-        # training set random undersampling
-        if ds_us:
-            y_train = self.dataset_labels[self.idxs_train]
-            if 'rus' in ds_us:
-                self.idxs_train, self.y_train = rus(self.idxs_train, y_train, strategy=ds_us, rseed=self.seed)
-        
-        # trim the dataset if requested
-        if ds_trim > 0:
-            trimmed_sets = trim_sets(self.idxs_train, self.idxs_test, self.idxs_val, ds_trim, self.seed)
-            self.idxs_train, self.idxs_val, self.idxs_test = trimmed_sets
-        
-        # extract the train, val and test set labels
-        self.y_train = self.dataset_labels[self.idxs_train]
-        self.y_val = self.dataset_labels[self.idxs_val]
-        self.y_test = self.dataset_labels[self.idxs_test]
-        
-        # export the splitting
-        split_data = {'train': {'x': self.idxs_train, 'y': self.y_train}, 
-                        'val': {'x': self.idxs_val, 'y': self.y_val}, 
-                        'test': {'x': self.idxs_test, 'y': self.y_test}, 
-                        'metadata': self.dataset_metadata}
-        save_path = self.results_dir if exps_common_settings else self.exp_results_subdir
-        save_split_data(split_data, save_path)
-
-    
-    def load_dataset_splitted(self):
-        ltrain, lval, ltest, lmetadata = load_split_data(self.results_dir)
-        self.idxs_train, self.y_train = ltrain['x'], ltrain['y']
-        self.idxs_val, self.y_val = lval['x'], lval['y']
-        self.idxs_test, self.y_test = ltest['x'], ltest['y']
-        self.dataset_metadata = lmetadata
-
-
-    def generate_sets(self):
+        # generate sets
+        # TODO: forse si può ottimizzare e ridurre l'overhead qui
         # gather the needed settings and data
         batch_size = self.settings['nn_batch_size']
         augmentation = self.settings['augmentation']
-        
+
         # create the train, (val) and test sets to feed the neural networks
-        self.x_train = TFDataset(self.dataset, 
-                                 self.idxs_train, 
-                                 batch_size=batch_size, 
-                                 buffer_size=self.shuffle_buffer_size, 
-                                 is_train=True,
-                                 augmentation=augmentation,
-                                 device=self.device).as_iterator()
-        self.x_val = TFDataset(self.dataset, self.idxs_val, batch_size=batch_size, device=self.device).as_iterator()
-        self.x_test = TFDataset(self.dataset, self.idxs_test, batch_size=batch_size, device=self.device).as_iterator()
+        self.x_train = self.dataset.generate_tfrset(self.x_train, 
+                                                    batch_size=batch_size, 
+                                                    shuffle=True,
+                                                    augment=augmentation)
+        self.x_val = self.dataset.generate_tfrset(self.x_val, batch_size=batch_size) 
+        self.x_test = self.dataset.generate_tfrset(self.x_test, batch_size=batch_size)
+
+        print('◇ dataset splitted')
         
-        
+
     def compute_class_weight(self):
         # calculate class balance using 'compute_class_weight'
         train_class_weights = compute_class_weight('balanced', classes=np.unique(self.y_train), y=self.y_train)
         train_class_weights = np.round(train_class_weights, 4)
-        self.train_class_weights = dict(enumerate(train_class_weights))
-        return self.train_class_weights
-    
-    def generate_split_charts(self, charts=None, per_exp=False):
-        if self.dataset_metadata is not None:
-            # default graphs
-            charts = charts or ["pdistr", "lsdistr_pie", "ldistr"]
-            
-            # get the output mode
-            display, save = self.output_mode
 
-            # select the path to save the graphs (global or per experiment)
-            save_path = self.exp_results_subdir if per_exp else self.results_dir
+        self.train_class_weights = dict(enumerate(train_class_weights))
+
+        print('◇ class weights computed')
+
+
+    def generate_split_charts(self, charts=None):
+        # default graphs
+        charts = charts or ["pdistr", "lsdistr_pie"]
+        
+        # get the output mode
+        display, save = self.output_mode
+        
+        plot_charts(self, charts, display, save, self.exp_results_subdir)
+
+        print('◇ split charts generated')
+
+
+    def plot_set_batches(self, set='train', num_batches=10):
+        # gather the needed settings and data
+        batch_size = self.settings['nn_batch_size']
+        # color map
+        class_colors = {0: 'green', 1: 'darkblue', 2: 'darkorange', 3: 'darkred'}
+        
+        sets = {'train': self.x_train, 'val': self.x_val}
+        selected_set = sets.get(set, self.x_test)
+
+        for batch in selected_set.take(num_batches): 
+            #_, axes = plt.subplots(2, 8, figsize=(20, 6))
+            _, axes = plt.subplots(batch_size // 8, 8, figsize=(20, 3 * (batch_size // 8)))
             
-            plot_charts(self, charts, display, save, save_path)
-        else:
-            raise Exception('dataset not yet splitted.')
+            frames, labels = batch
+            
+            for i, (frame, label) in enumerate(zip(frames, labels)):        
+                # Stampa l'immagine
+                #axes[i % 2, i // 2].imshow(frame)
+                axes[i // 8, i % 8].imshow(frame)
+
+                # imposta colore e stampa etichetta
+                color = class_colors.get(np.argmax(label), 'black')
+                #axes[i % 2, i // 2].set_title(f'Target: {label}', color=color)
+                axes[i // 8, i % 8].set_title(f'Target: {label}', color=color)
+
+                # Nascondi gli assi
+                #axes[i % 2, i // 2].axis('off')
+                axes[i // 8, i % 8].axis('off')
+
+            plt.tight_layout()
+            plt.show()
+            plt.close()
 
 
     def nn_model_build(self):
@@ -301,12 +211,12 @@ class Experiment:
 
         if net_type == 'obd':
             net_object = NeuralNetwork(nn_backbone = self.settings['nn_backbone'],
-                                       obd_hidden_size=self.settings['obd_hidden_size'], 
+                                       obd_hidden_size = self.settings['obd_hidden_size'], 
                                        **common_params)
         elif net_type == 'clm':
             net_object = NeuralNetwork(nn_backbone = self.settings['nn_backbone'],
-                                       clm_link=self.settings['clm_link'], 
-                                       clm_use_tau=self.settings['clm_use_tau'], 
+                                       clm_link = self.settings['clm_link'], 
+                                       clm_use_tau = self.settings['clm_use_tau'], 
                                        **common_params)
         else:
             net_object = NeuralNetwork(**common_params)
@@ -319,6 +229,8 @@ class Experiment:
             if isinstance(layer, tf.keras.layers.Conv2D):
                 self.last_conv_layer = layer.name
                 break
+        
+        print('◇ model built')
 
         return model
     
@@ -357,36 +269,41 @@ class Experiment:
         if summary:
             model.summary()
 
+        print('◇ model compiled')
+
 
     def nn_model_train(self, model, gradcam_freq=5, status_bar=None):
         # parameters
         epochs = self.settings['nn_epochs']
         batch_size = self.settings['nn_batch_size']
-        ckpt_filename = os.path.join(self.exp_results_subdir, "weights", "best_ckpt.hdf5")
+        ckpt_filename = os.path.join(self.exp_results_subdir, "weights/", "best_weights.h5")
 
         # callbacks
         tensorboard = TensorBoard(log_dir=f"logs/fit/{self.exp_name}", histogram_freq=1)
         backup = BackupAndRestore(backup_dir="backup/")
         checkpoint = ModelCheckpoint(ckpt_filename, monitor='val_loss', save_weights_only=True, save_best_only=True, verbose=self.verbose)
-        early_stop = EarlyStopping(monitor='val_loss', patience=10, verbose=self.verbose)
-        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=6, min_lr=1e-6, verbose=self.verbose)
+        early_stop = EarlyStopping(monitor='val_loss', patience=15, verbose=self.verbose)
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=10, min_lr=1e-6, verbose=self.verbose)
         gradcam = GradCAMCallback(model, self, freq=gradcam_freq) if gradcam_freq > 0 else None
-        update_status = UpdataRichStatusBarCallback(status_bar, epochs) if status_bar is not None else None
 
         # build callbacks list
-        callbacks = [tensorboard, backup, checkpoint, early_stop, reduce_lr, gradcam, update_status]
+        callbacks = [tensorboard, backup, checkpoint, early_stop, reduce_lr, gradcam]
         callbacks = [callback for callback in callbacks if callback is not None]
         
+        # compute train and val steps per epoch
+        train_steps_per_epoch = self.dataset.frame_counts['train'] // batch_size
+        val_steps_per_epoch = self.dataset.frame_counts['val'] // batch_size
+
         # neural network fit
         history = model.fit(self.x_train,
                             epochs=epochs,
-                            steps_per_epoch=len(self.idxs_train) // batch_size,
+                            steps_per_epoch=train_steps_per_epoch,
                             class_weight=self.train_class_weights,
                             validation_data=self.x_val,
-                            validation_steps=len(self.idxs_val) // batch_size,
+                            validation_steps=val_steps_per_epoch,
                             callbacks=callbacks,
                             verbose=self.verbose,
-                            max_queue_size=self.max_queue_size,
+                            max_queue_size=self.max_qsize,
                             workers=self.workers,
                             use_multiprocessing=False
                             )
@@ -438,27 +355,32 @@ class Experiment:
         
         plt.close()
 
+        print('◇ training graphs saved')
+
 
     def nn_model_evaluate(self, model, weights=None, load_best_weights=True):
-        # if specified, load the weights passed as argument (priority)
         if weights is not None:
+             # if specified, load the weights passed as argument (priority)
             model.load_weights(weights)
         elif load_best_weights:
             # load the best weights
-            best_weights_file = os.path.join(self.exp_results_subdir, "weights", "best_ckpt.hdf5")
+            best_weights_file = os.path.join(self.exp_results_subdir, "weights", "best_weights.h5")
             try:
                 model.load_weights(best_weights_file)
             except Exception as e:
                 raise Exception('error while loading best weights file: ', e)
         
         # get the batch size
-        nn_batch_size = self.settings['nn_batch_size']
+        batch_size = self.settings['nn_batch_size']
         
+        # compute test steps per epoch
+        test_steps_per_epoch = -(-self.dataset.frame_counts['test'] // batch_size)
+
         # model evaluation, get the predictions by running the model inference
-        y_test_pred = model.predict(self.x_test, 
-                                    steps=-(-len(self.idxs_test) // nn_batch_size),
+        y_test_pred = model.predict(self.x_test,
+                                    steps=test_steps_per_epoch,
                                     verbose=self.verbose,
-                                    max_queue_size=self.max_queue_size,
+                                    max_queue_size=self.max_qsize,
                                     workers=self.workers,
                                     use_multiprocessing=False
                                     )
@@ -486,7 +408,3 @@ class Experiment:
             writer = csv.writer(csv_file)
             writer.writerow(values_columns)
         
-        # update the experiments checkpoint file 
-        datetime_log = datetime.now().strftime("%m/%d/%Y,%H:%M:%S")
-        with open('run_checkpoint.txt', mode='a', encoding='UTF-8') as ckp_file:
-            ckp_file.write(f"{self.exp_name} {datetime_log}\n")

@@ -1,6 +1,7 @@
 rich==13.6.0
 tqdm==4.66.1
 IProgress==0.4
+ipywidgets==8.1.1
 h5py==3.10.0
 keras==2.14.0
 keras-cv==0.5.1

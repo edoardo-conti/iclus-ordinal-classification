@@ -1,5 +1,4 @@
 import keras
-from keras import backend as K
 import tensorflow as tf
 import tensorflow_probability
 import tensorflow as tf

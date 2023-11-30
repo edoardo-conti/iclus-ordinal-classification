@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 import keras
 from keras.applications.vgg16 import VGG16
-from clm import CumulativeLinkModel
+from network.clm import CumulativeLinkModel
 
 class NeuralNetwork:
     def __init__(self, 

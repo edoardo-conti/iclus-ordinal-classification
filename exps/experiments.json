@@ -1,3 +1,4 @@
 [
-{"ds_split_ratio":[0.6,0.2,0.2], "ds_split_by":"patient", "ds_trim":0.02, "ds_us":false, "nn_type":"resnet18", "nn_batch_size":16, "nn_epochs":20, "nn_dropout":0.0, "augmentation":true, "loss":"CCE", "metrics":["ccr","mae","rmse","ms","acc_1off","qwk"], "optimizer":"SDG", "learning_rate":1e-2, "weight_decay":1e-6, "momentum":0.9}
+{"ds_split_ratio":[0.6,0.2,0.2], "ds_mrus":0.1, "nn_type":"resnet18", "nn_batch_size":32, "nn_epochs":1, "nn_dropout":0.0, "augmentation":true, "loss":"CCE", "metrics":["ccr","mae","rmse","ms","acc_1off","qwk"], "optimizer":"SDG", "learning_rate":1e-2, "weight_decay":1e-6, "momentum":0.9},
+{"ds_split_ratio":[0.6,0.2,0.2], "ds_mrus":0.1, "nn_type":"resnet18", "nn_batch_size":16, "nn_epochs":2, "nn_dropout":0.0, "augmentation":true, "loss":"CCE", "metrics":["ccr","mae","rmse","ms","acc_1off","qwk"], "optimizer":"SDG", "learning_rate":1e-2, "weight_decay":1e-6, "momentum":0.9}
 ]

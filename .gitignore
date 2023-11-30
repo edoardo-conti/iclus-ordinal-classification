@@ -8,13 +8,17 @@
 *bak*
 
 # dataset
-*.h5
 dataset/*
+dataset_tfrecords/*
+*.h5
 splitdata.pkl
 
 # neural network
 backup/*
 results/*
+
+# wip
+wip/
 
 # tensorboard
 logs/fit/*
