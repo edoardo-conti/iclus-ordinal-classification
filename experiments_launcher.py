@@ -32,18 +32,17 @@ def main():
                                      random_state = args.seed)
     
     # building the class
-    experiments_set.build()
+    set_config = experiments_set.build()
     
     for exp_idx, exp_settings in enumerate(experiments_set.exps):
         # initialization of the experiment class with a defined set of parameters
-        # TODO: migliorare il passaggio di parametri (magari scrivere metodo dedicato?)
-        experiment = Experiment(settings=exp_settings, set_config=experiments_set.__dict__)
+        experiment = Experiment(settings=exp_settings, set_config=set_config)
         
         # build the experiment 
-        experiment.build()
+        exp_name = experiment.build()
 
-        # get the ascii representation of the experiment's id
-        print(f"\n◆ experiment {experiment.exp_name} [{exp_idx+1}/{experiments_set.tot_exps}] ...\n")
+        # print the experiment name along with the experiments count in the run
+        print(f"\n◆ experiment {exp_name} loaded [{exp_idx+1}/{experiments_set.tot_exps}]\n")
 
         # perform the dataset splitting, computing the class weight and generating the charts
         experiment.split_dataset()
@@ -60,7 +59,7 @@ def main():
 
         # train the neural network model
         history = experiment.nn_model_train(model)
-
+        
         print(f"\n☉ training completed\n")
 
         # plot training graphs
@@ -76,7 +75,7 @@ def main():
         # clear the session
         K.clear_session()
 
-    print("\n★★★★★★★★★★★★ END ★★★★★★★★★★★★\n")
+    print("\n★★★★★★★★★★★★★★★★★★★★★★★★★ END ★★★★★★★★★★★★★★★★★★★★★★★★★\n")
 
 if __name__ == "__main__":
     main()

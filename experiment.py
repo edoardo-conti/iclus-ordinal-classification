@@ -111,32 +111,31 @@ class Experiment:
         # add the experiment name in the results dictionary
         self.metrics_results['experiment'] = self.exp_name
 
+        return self.exp_name
+
 
     def split_dataset(self):
         # gather the needed experiment settings
-        split_ratio, m_rus = [self.settings[key] for key in ['ds_split_ratio', 'ds_mrus']]
-        
-        # split dataset
-        self.dataset.split_dataset(split_ratio)
-
-        # prepare sets
-        self.x_train, self.y_train = self.dataset.prepare_tfrset('train', random_under_msampler=m_rus)
-        self.x_val, self.y_val = self.dataset.prepare_tfrset('val', random_under_msampler=m_rus)
-        self.x_test, self.y_test = self.dataset.prepare_tfrset('test', random_under_msampler=m_rus)
-        
-        # generate sets
-        # TODO: forse si può ottimizzare e ridurre l'overhead qui
-        # gather the needed settings and data
+        split_ratio = self.settings['ds_split_ratio']
+        m_rus = self.settings['ds_mrus']
         batch_size = self.settings['nn_batch_size']
         augmentation = self.settings['augmentation']
 
-        # create the train, (val) and test sets to feed the neural networks
-        self.x_train = self.dataset.generate_tfrset(self.x_train, 
+        # split dataset
+        self.dataset.holdout_split(split_ratio)
+
+        # prepare sets
+        x_train, self.y_train = self.dataset.prepare_tfrset('train', random_under_msampler=m_rus)
+        x_val, self.y_val = self.dataset.prepare_tfrset('val', random_under_msampler=m_rus)
+        x_test, self.y_test = self.dataset.prepare_tfrset('test', random_under_msampler=m_rus)
+        
+        # generate the train, (val) and test sets to feed the neural networks
+        self.x_train = self.dataset.generate_tfrset(x_train, 
                                                     batch_size=batch_size, 
                                                     shuffle=True,
                                                     augment=augmentation)
-        self.x_val = self.dataset.generate_tfrset(self.x_val, batch_size=batch_size) 
-        self.x_test = self.dataset.generate_tfrset(self.x_test, batch_size=batch_size)
+        self.x_val = self.dataset.generate_tfrset(x_val, batch_size=batch_size) 
+        self.x_test = self.dataset.generate_tfrset(x_test, batch_size=batch_size)
 
         print('◇ dataset splitted')
         
@@ -272,7 +271,7 @@ class Experiment:
         print('◇ model compiled')
 
 
-    def nn_model_train(self, model, gradcam_freq=5, status_bar=None):
+    def nn_model_train(self, model, gradcam_freq=5):
         # parameters
         epochs = self.settings['nn_epochs']
         batch_size = self.settings['nn_batch_size']
@@ -285,7 +284,7 @@ class Experiment:
         early_stop = EarlyStopping(monitor='val_loss', patience=15, verbose=self.verbose)
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=10, min_lr=1e-6, verbose=self.verbose)
         gradcam = GradCAMCallback(model, self, freq=gradcam_freq) if gradcam_freq > 0 else None
-
+        
         # build callbacks list
         callbacks = [tensorboard, backup, checkpoint, early_stop, reduce_lr, gradcam]
         callbacks = [callback for callback in callbacks if callback is not None]

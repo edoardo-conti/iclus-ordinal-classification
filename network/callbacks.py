@@ -84,7 +84,7 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
         with tf.GradientTape() as tape:
             last_conv_layer_output, preds = grad_model(img_array)
             pred_index = pred_index or tf.argmax(preds[0])
-            pred_index -= self.model.name == 'obd' and pred_index == 3
+            pred_index -= tf.cast(self.model.name == 'obd' and pred_index == 3, tf.int64)
 
             class_channel = preds[:, pred_index]
         

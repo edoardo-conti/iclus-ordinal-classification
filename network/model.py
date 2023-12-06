@@ -9,7 +9,7 @@ class NeuralNetwork:
                  ds_img_size:int = 224,
                  ds_img_channels:int = 3,
                  ds_num_classes:int = 4,
-                 nn_backbone:str = '',
+                 nn_backbone:str = 'resnet18',
                  nn_dropout:float = 0.0,
                  nn_activation:str = 'relu',
                  clm_link:str = 'logit',
@@ -32,8 +32,8 @@ class NeuralNetwork:
         if hasattr(self, net_model):
             return getattr(self, net_model)()
         else:
-            raise Exception('Invalid network model.')
-
+            raise Exception('invalid network model.')
+    
     def __activation(self):
         if self.activation == 'lrelu':
             return keras.layers.LeakyReLU()
@@ -44,7 +44,13 @@ class NeuralNetwork:
         else:
             return keras.layers.Activation('relu')
     
-    def __nominal_final_activation(self, x, final_act='softmax'):
+    def __nominal_final_activation(self, x, dense_units=128, final_act='softmax'):
+        # flatten the convolutional part
+        x = keras.layers.Flatten()(x)
+        
+        # add single dense layer
+        x = keras.layers.Dense(dense_units)(x)
+
         # apply the dropout layer if requested
         if self.dropout > 0:
             x = keras.layers.Dropout(rate=self.dropout)(x)
@@ -55,7 +61,7 @@ class NeuralNetwork:
 
         return x    
 
-    def _vgg16_convnet(self, input_shape, weights=None, frozen=True, end_pooling='avg'):
+    def _vgg16_convnet(self, input_shape, weights=None, frozen=False, end_pooling='avg'):
         # Define the convolutional VGG16 part
         vgg16 = VGG16(include_top=False, weights=weights, input_shape=input_shape, pooling=end_pooling)
         
@@ -127,18 +133,17 @@ class NeuralNetwork:
         input = keras.layers.Input(shape=input_shape)
         
         x = _conv_block(input, 32)
-        x = _conv_block(x, 32, True)
+        x = _conv_block(x, 32, max_pooling=True)
         x = _conv_block(x, 64)
-        x = _conv_block(x, 64, True)
+        x = _conv_block(x, 64, max_pooling=True)
         x = _conv_block(x, 128)
-        x = _conv_block(x, 128, True)
+        x = _conv_block(x, 128, max_pooling=True)
         x = _conv_block(x, 128)
-        x = _conv_block(x, 128, True)
+        x = _conv_block(x, 128, max_pooling=True)
         x = _conv_block(x, 128, kernel_size=4)
-        
-        x = keras.layers.Flatten()(x)
-        output = keras.layers.Dense(96)(x)
-        
+
+        output = keras.layers.GlobalAveragePooling2D()(x)
+
         cnn128 = keras.Model(input, output, name="cnn128_convnet")
 
         return cnn128
@@ -158,13 +163,7 @@ class NeuralNetwork:
         xs = [drop(dense_lrelu(hidden(x))) for hidden, drop in zip(dense_hidden, dense_dropout)]
         xs = [dense_sigmoid(dense_bn(output(xc)))[:, 0] for output, xc in zip(dense_output, xs)]
         
-        # alt: without batch norm on last FC + Sigmoid
-        #xs = [dense_sigmoid(output(xc))[:, 0] for output, xc in zip(dense_output, xs)]
-        
         out = tf.concat([tf.expand_dims(xc, axis=1) for xc in xs], axis=1)
-        
-        # alt: keras model instead of output
-        #obd_densenet = keras.Model(x, out, name="obd_densenet")
 
         return out
     
@@ -176,9 +175,9 @@ class NeuralNetwork:
         if backbone == 'resnet18':
             conv_net = self._resnet18_convnet(self.input_shape)
         elif backbone == 'vgg16':
-            conv_net = self._vgg16_convnet(self.input_shape, frozen=False)
+            conv_net = self._vgg16_convnet(self.input_shape)
         elif backbone == 'vgg16_imagenet':
-            conv_net = self._vgg16_convnet(self.input_shape, 'imagenet')
+            conv_net = self._vgg16_convnet(self.input_shape, 'imagenet', frozen=True)
         else:
             conv_net = self._cnn128_convnet(self.input_shape)
 
@@ -219,9 +218,6 @@ class NeuralNetwork:
         # gather the resnet18 backbone
         resnet18 = self._resnet18_convnet(self.input_shape)
         x = resnet18.output
-        
-        # flatten the convolutional part
-        x = keras.layers.Flatten()(x)
 
         # add the final layers
         x = self.__nominal_final_activation(x)
@@ -241,9 +237,20 @@ class NeuralNetwork:
         model = keras.models.Model(cnn128.input, x, name="cnn128")
         
         return model
-        
+
     def vgg16(self):
         vgg16 = self._vgg16_convnet(self.input_shape)
+        x = vgg16.output
+
+        # add the final layers
+        x = self.__nominal_final_activation(x)
+
+        model = keras.models.Model(vgg16.input, x, name="vgg16")
+        
+        return model
+    
+    def vgg16_imagenet(self):
+        vgg16 = self._vgg16_convnet(self.input_shape, weights='imagenet', frozen=True)
         x = vgg16.output
 
         # add the final layers

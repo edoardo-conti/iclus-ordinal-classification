@@ -59,6 +59,8 @@ class ExperimentSets:
         self.load_dataset()
         self.init_results()
 
+        return self.export_set_config()
+
 
     def check_gpu_availability(self):
         cpu_device = tf.config.list_physical_devices('CPU')[0]
@@ -145,3 +147,11 @@ class ExperimentSets:
                 writer.writerow(self.csv_columns)
 
         print('✔ results initialized')
+
+    
+    def export_set_config(self):
+        params_to_exclude = ['exps_json_path', 'dataset_dir', 'mp_xla', 'shuffle_bsize', 
+                             'random_state', 'host_hw', 'exps', 'tot_exps']
+        config = {key: value for key, value in self.__dict__.items() if key not in params_to_exclude}
+
+        return config

@@ -18,7 +18,7 @@ class DatasetHandler():
             self.shuffle_bsize = shuffle_bsize
             self.random_state = random_state
 
-            self.ds_mapping = {}
+            self.mov_per_pat = {}
             self.split = {}
             self.frame_counts = {}
             
@@ -33,13 +33,12 @@ class DatasetHandler():
     # build della classe
     def build(self):
         random.seed(self.random_state)
-        self.ds_mapping = self.map_movies_per_patient()
+        self.mov_per_pat = self.map_movies_per_patient()
         self.augmenter.build()
 
 
-    # conteggio numero di frame per ogni paziente (aggregazione dei tfrecords corrispondenti)
     def map_movies_per_patient(self):
-        ds_mapping = {}
+        movies_per_patient = {}
 
         for medical_center in os.listdir(self.dataset_dir):
             medical_center_folder = os.path.join(self.dataset_dir, medical_center)
@@ -47,23 +46,38 @@ class DatasetHandler():
             if os.path.isdir(medical_center_folder):
                 for patient in os.listdir(medical_center_folder):
                     patient_folder = os.path.join(medical_center_folder, patient)
-    
+
                     if os.path.isdir(patient_folder):
                         movies = os.listdir(patient_folder)
                         tfrecord_files = [os.path.join(patient_folder, movie) for movie in movies if movie.endswith('.tfrecord')]
 
-                        key = f'{medical_center}/{patient}'
-                        ds_mapping[key] = tfrecord_files
+                        unique_patient_key = f'{medical_center}/{patient}'
+                        movies_per_patient[unique_patient_key] = tfrecord_files
         
-        return ds_mapping
+        return movies_per_patient
+
+
+    def count_frames_per_patient_and_center(self):
+        frame_count_per_patient = {}
+        frame_count_per_center = {}
+
+        for patient_key, tfrecord_files in self.mov_per_pat.items():
+            dataset = tf.data.TFRecordDataset(tfrecord_files)
+            frame_count_per_patient[patient_key] = sum(1 for _ in dataset.as_numpy_iterator())
+
+        for medcenter_pat, frames in frame_count_per_patient.items():
+            med_center = medcenter_pat.split('/')[0]
+            frame_count_per_center[med_center] = frame_count_per_center.get(med_center, 0) + frames
+
+        return frame_count_per_patient, frame_count_per_center
 
 
     # dataset splitting based on random patients's selection
-    def split_dataset(self, split_ratio=[0.6, 0.2, 0.2]):
+    def holdout_split(self, split_ratio=[0.6, 0.2, 0.2]):
         train_ratio, test_ratio, val_ratio = split_ratio
-        keys = list(self.ds_mapping.keys())
-        
-        # Effettua lo splitting delle chiavi
+        keys = list(self.mov_per_pat.keys())
+
+        # perform patient keys splitting
         train_keys, test_val_keys = train_test_split(keys, train_size=train_ratio, random_state=self.random_state)
         val_keys, test_keys = train_test_split(test_val_keys, test_size=test_ratio/(val_ratio+test_ratio), random_state=self.random_state)
         
@@ -82,29 +96,35 @@ class DatasetHandler():
 
     # movies-based undersampling
     def movie_undersampler(self, movies_per_patients, factor=0.5):
+        random.seed(self.random_state)
         return [
             random.sample(patient_movies, max(1, int(len(patient_movies) * factor)))
             for patient_movies in movies_per_patients
         ]
+    
 
+    # create tfrecord dataset from patients keys    
+    def build_tfrecord_from_patients(self, patient_keys, rums=False):
+        if type(patient_keys) is not list:
+            patient_keys = [patient_keys]
 
-    # generate the sets using TFRecordDataset
-    def prepare_tfrset(self, split_set, random_under_msampler=False):
-        #tfrecord_files = [movie for patient in self.split[split_set] for movie in self.ds_mapping[patient]]
-        
-        patients_per_set = self.split[split_set]
-        # undersampling sui pazienti
+        movies_per_patients = [self.mov_per_pat[patient] for patient in patient_keys]
 
-        movies_per_patients = [self.ds_mapping[patient] for patient in patients_per_set]
-        # undersampling sui video di ciascun paziente
-        if random_under_msampler:
-             movies_per_patients = self.movie_undersampler(movies_per_patients, random_under_msampler)
-        
+        if rums:
+             movies_per_patients = self.movie_undersampler(movies_per_patients, rums)
+
         tfrecord_files = [movie for patient_movies in movies_per_patients for movie in patient_movies]
 
         dataset = tf.data.TFRecordDataset(tfrecord_files)
         labels = self.extract_labels_from_tfrset(dataset)
+        
+        return dataset, labels
 
+
+    # generate the sets using TFRecordDataset
+    def prepare_tfrset(self, split_set, random_under_msampler=False):
+        dataset, labels = self.build_tfrecord_from_patients(self.split[split_set], random_under_msampler)
+        
         self.frame_counts[split_set] = len(labels)
 
         return dataset, labels
@@ -129,7 +149,7 @@ class DatasetHandler():
     def generate_tfrset(self, pre_dataset, batch_size, shuffle=False, augment=False):
         # mapping
         dataset = pre_dataset.map(self._parse_lus_movie, num_parallel_calls=tf.data.AUTOTUNE)
-
+        
         # shuffling
         if shuffle:
             computed_buffer_size = batch_size * self.shuffle_bsize

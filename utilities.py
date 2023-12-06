@@ -3,38 +3,42 @@ import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 
-def save_split_data(split_data, exps_result_dir):
-    with open('splitdata.pkl', 'wb') as file:
-        pickle.dump(split_data, file)
+def plot_labels_per_patient_hists(labels_per_patient, display=False):
+    num_patients = len(labels_per_patient)
+    rows = 5
+    cols = 7
 
-def load_split_data(exps_result_dir):
-    with open('splitdata.pkl', 'rb') as file:
-        data = pickle.load(file)   
-    return data['train'], data['val'], data['test'], data['metadata']
+    _, axs = plt.subplots(rows, cols, figsize=(15, 10))
 
-def print_split_ds_info(ds_info):
-    # Print textual split information
-    for medical_center in ds_info['medical_center_patients'].keys():
-        print(f"Medical Center: {medical_center}")
-        print(f"  Frames in center: {ds_info['frames_by_center'][medical_center]}")
-        print("  Train patients:")
-        for patient in ds_info['train_patients_by_center'][medical_center]:
-            frame_count = ds_info['frames_by_center_patient'][medical_center][patient]
-            print(f"   {patient}: {frame_count} frames")
-        print("  Val patients:")
-        for patient in ds_info['val_patients_by_center'][medical_center]:
-            frame_count = ds_info['frames_by_center_patient'][medical_center][patient]
-            print(f"   {patient}: {frame_count} frames")
-        print("  Test patients:")
-        for patient in ds_info['test_patients_by_center'][medical_center]:
-            frame_count = ds_info['frames_by_center_patient'][medical_center][patient]
-            print(f"   {patient}: {frame_count} frames")
+    for i in range(rows):
+        for j in range(cols):
+            patient_idx = i * cols + j
+            if patient_idx < num_patients:
+                patient_key = list(labels_per_patient.keys())[patient_idx]
+                labels = labels_per_patient[patient_key]
+    
+                axs[i, j].hist(labels, bins=np.arange(5) - 0.5, edgecolor='black', linewidth=1.2)
+                axs[i, j].set_title(patient_key)
+                axs[i, j].set_xticks(range(5))
+                axs[i, j].set_xticklabels([str(k) for k in range(5)])
+                axs[i, j].set_xlabel('Score')
+                axs[i, j].set_ylabel('Frequency')
+
+    plt.tight_layout()
+    plt.title('Labels per patients distribution')
+
+    # Display the plot
+    if display:
+        plt.show()
+
+    return plt.gcf()
+
 
 def plot_patients_split(dataset_split, display=False):
     # Estrai i centri medici e i pazienti dai dati
     centri_medici = list(set([paziente.split('/')[0] for split, pazienti in dataset_split.items() for paziente in pazienti]))
     sets = list(dataset_split.keys())
-
+    
     # Conta il numero di pazienti per centro medico e set
     counts = np.zeros((len(centri_medici), len(sets)))
     for i, centro_medico in enumerate(centri_medici):
@@ -123,6 +127,7 @@ def plot_fdistr_per_class_pie(y_train_ds, y_val_ds, y_test_ds, display=False):
 
     return plt.gcf()
 
+
 def plot_labels_distr(labels, display=False):
     # create an occurrence count of each class
     counts = {label: labels.count(label) for label in set(labels)}
@@ -143,40 +148,6 @@ def plot_labels_distr(labels, display=False):
     
     return plt.gcf()
 
-def labels_distr_per_center(pkl_file, centers):
-    if os.path.exists(pkl_file):
-        # If the pickle file exists, load the data from it
-        with open(pkl_file, 'rb') as f:
-            data = pickle.load(f)
-            medical_center_patients = data['medical_center_patients']
-            data_map_idxs_pcm = data['data_map_idxs_pcm']
-            labels = data['labels']
-
-    # Initialize a dictionary to collect indexes and labels for each medical center
-    centers_data = {center: {'idxs': [], 'labels': []} for center in centers}
-
-    # Retrieve indices for each patient in each medical center
-    for center in centers:
-        center_patients = medical_center_patients[center]
-        for patient in center_patients:
-            key = (patient, center)
-            if key in data_map_idxs_pcm:
-                idxs = data_map_idxs_pcm[key]
-                centers_data[center]['idxs'].extend(idxs)
-
-    # Manually extract labels from indexes
-    for center, data in centers_data.items():
-        centers_data[center]['labels'] = [labels[idx] for idx in data['idxs']]
-
-    # Histogram plot for each medical center
-    for center, data in centers_data.items():
-        plt.hist(data['labels'], bins=np.arange(min(data['labels']), max(data['labels']) + 1.5) - 0.5, rwidth=0.8, alpha=0.75)
-        plt.xlabel('Label')
-        plt.ylabel('Frequency')
-        plt.title(f'Histogram of labels for: {center}')
-        plt.xticks(np.arange(min(data['labels']), max(data['labels']) + 1))
-        plt.grid(axis='y', linestyle='--', alpha=0.7)
-        plt.show()
 
 def plot_charts(exp, charts, display, save, save_path):
     # create the charts subfolder 
