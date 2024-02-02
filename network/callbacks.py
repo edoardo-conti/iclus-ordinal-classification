@@ -9,22 +9,23 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
     def __init__(self, 
                  model, 
                  experiment,
+                 val_data = None,
                  nsamples_per_class = 1, 
                  freq = 5):
         super(GradCAMCallback, self).__init__()
         self.model = model
+        self.val_data = val_data
         self.num_classes = experiment.ds_num_classes
         self.conv_layer_name = experiment.last_conv_layer
-        self.val_data = experiment.x_val
         self.show_cams = experiment.output_mode[0]
         self.save_cams = experiment.output_mode[1]
         self.freq = freq
         
         # gather 'x' samples for each class
         self.samples_per_class = self.get_classes_samples(nsamples_per_class)
-
+        
         # compute gradcams save path
-        self.gradcams_save_path = os.path.join(experiment.exp_results_subdir, "gradcams/")
+        self.gradcams_save_path = os.path.join(experiment.hpt_holdout_dir, "gradcams/")
     
 
     def on_epoch_end(self, epoch, logs=None):
@@ -39,8 +40,8 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
             gradcam_img_merged = self.merge_gradcam(sample[0], gradcam)
             images_with_gradcam.append(gradcam_img_merged)
 
-        _, axs = plt.subplots(1, 4, figsize=(15, 60))
-        plt.subplots_adjust(wspace=0.4)
+        _, axs = plt.subplots(1, 4, figsize=(15, 80))
+        plt.subplots_adjust(wspace=0.5)
 
         for i, ax in enumerate(axs.ravel()):
             ax.imshow(images_with_gradcam[i], cmap='gray')
@@ -53,7 +54,7 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
             if not os.path.exists(self.gradcams_save_path):
                 os.makedirs(self.gradcams_save_path)
             current_gradcam_path = os.path.join(self.gradcams_save_path, f"gradcam_epoch_{epoch+1}.png")
-            plt.savefig(current_gradcam_path)
+            plt.savefig(current_gradcam_path, bbox_inches='tight', pad_inches=0.2)
         
         plt.close()
 

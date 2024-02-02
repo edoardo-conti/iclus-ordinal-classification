@@ -1,14 +1,14 @@
+from sklearn.utils import check_random_state
 import tensorflow as tf
 
 class USDataAugmentation():
-    def __init__(self, input_size=224, random_state=42):
+    def __init__(self, input_size=224, seed=42):
         self.input_size = input_size
-        self.random_state = random_state
-
-    def build(self):
-        tf.random.set_seed(self.random_state)
-        
-        self._random_rotation = tf.keras.layers.RandomRotation(factor=0.05, seed=self.random_state)
+        self.seed = seed
+    
+    def build(self):        
+        tf.random.set_seed(self.seed)
+        self._random_rotation = tf.keras.layers.RandomRotation(factor=0.05, seed=self.seed)
 
     def _central_crop(self, frame):
         random_zoom = tf.random.uniform([], minval=0.7, maxval=0.9, dtype=tf.float32)

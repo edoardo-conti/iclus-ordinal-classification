@@ -16,7 +16,7 @@ def ordinal_distance_loss(n_classes):
     '''
     
     mse = tf.keras.losses.MeanSquaredError(reduction=tf.keras.losses.Reduction.SUM)
-
+    
     def _ordinal_distance_loss(y_true, y_pred): 
         indices = tf.argmax(y_true, axis=1)
         y_true = tf.gather(target_class, indices)

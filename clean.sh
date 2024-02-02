@@ -3,6 +3,7 @@
 results_dir="./results"
 logs_dir="./logs"
 backup_dir="./backup"
+kfold_labels="./kfold_labels.pkl"
 
 delete_directory() {
     local dir="$1"
@@ -30,3 +31,4 @@ delete_directory "$logs_dir"
 delete_directory "$backup_dir"
 
 # delete files
+delete_file "$kfold_labels"

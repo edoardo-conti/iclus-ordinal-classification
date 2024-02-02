@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 import keras
-from keras.applications.vgg16 import VGG16
+from keras.applications import VGG16, ResNet50
 from network.clm import CumulativeLinkModel
 
 class NeuralNetwork:
@@ -44,21 +44,21 @@ class NeuralNetwork:
         else:
             return keras.layers.Activation('relu')
     
-    def __nominal_final_activation(self, x, dense_units=128, final_act='softmax'):
+    def __nominal_final_activation(self, x, dense_units=1000, final_act='softmax'):
         # flatten the convolutional part
-        x = keras.layers.Flatten()(x)
+        # x = keras.layers.Flatten()(x)
         
-        # add single dense layer
+        # add the dense layer
         x = keras.layers.Dense(dense_units)(x)
-
+        
         # apply the dropout layer if requested
         if self.dropout > 0:
             x = keras.layers.Dropout(rate=self.dropout)(x)
-
+        
         # add the final dense layer with the softmax activation
         x = keras.layers.Dense(self.num_classes)(x)
         x = keras.layers.Activation(final_act)(x)
-
+    
         return x    
 
     def _vgg16_convnet(self, input_shape, weights=None, frozen=False, end_pooling='avg'):
@@ -72,6 +72,18 @@ class NeuralNetwork:
                 layer.trainable = False
 
         return vgg16
+    
+    def _resnet50_convnet(self, input_shape, weights="imagenet", frozen=False, end_pooling='avg'):
+        # Define the convolutional VGG16 part
+        resnet50 = ResNet50(include_top=False, weights=weights, input_shape=input_shape, pooling=end_pooling)
+        
+        # When performing transfer learning freeze only the convolutional layers and leave
+        # trainable the last pooling layer specified with the 'end_pooling' parameter
+        if frozen:
+            for layer in resnet50.layers[:-1]:
+                layer.trainable = False
+
+        return resnet50
     
     def _resnet18_convnet(self, input_shape):
         def _resnet_block(x, filters: int, kernel_size=3, init_scheme='he_normal', down_sample=False):
@@ -94,7 +106,7 @@ class NeuralNetwork:
             # if down sampling not enabled, add a shortcut directly 
             x = keras.layers.Add()([x, res])
             out = self.__activation()(x)
-
+            
             return out
 
         input = keras.layers.Input(shape=input_shape)
@@ -117,7 +129,7 @@ class NeuralNetwork:
         output = keras.layers.GlobalAveragePooling2D()(x)
         
         resnet18 = keras.Model(input, output, name="resnet18_convnet")
-
+        
         return resnet18
 
     def _cnn128_convnet(self, input_shape):
@@ -159,7 +171,7 @@ class NeuralNetwork:
         dense_bn = keras.layers.BatchNormalization()
         dense_lrelu = keras.layers.LeakyReLU()
         dense_sigmoid = keras.layers.Activation('sigmoid')
-
+        
         xs = [drop(dense_lrelu(hidden(x))) for hidden, drop in zip(dense_hidden, dense_dropout)]
         xs = [dense_sigmoid(dense_bn(output(xc)))[:, 0] for output, xc in zip(dense_output, xs)]
         
@@ -174,6 +186,8 @@ class NeuralNetwork:
         # get the model based on the backbone
         if backbone == 'resnet18':
             conv_net = self._resnet18_convnet(self.input_shape)
+        if backbone == 'resnet50':
+            conv_net = self._resnet50_convnet(self.input_shape)
         elif backbone == 'vgg16':
             conv_net = self._vgg16_convnet(self.input_shape)
         elif backbone == 'vgg16_imagenet':
@@ -200,6 +214,9 @@ class NeuralNetwork:
         conv_net = self._get_backbone_model()
         x = conv_net.output
         
+        # fully connected units
+        x = keras.layers.Dense(1000)(x)
+        
         # apply the dropout layer if requested
         if self.dropout > 0:
             x = keras.layers.Dropout(rate=self.dropout)(x)
@@ -218,13 +235,24 @@ class NeuralNetwork:
         # gather the resnet18 backbone
         resnet18 = self._resnet18_convnet(self.input_shape)
         x = resnet18.output
-
+        
         # add the final layers
         x = self.__nominal_final_activation(x)
 
         # build the keras neural network model
         model = keras.models.Model(resnet18.input, x, name="resnet18")
+        
+        return model
 
+    def resnet50(self):
+        resnet50 = self._resnet50_convnet(self.input_shape)
+        x = resnet50.output
+
+        # add the final layers
+        x = self.__nominal_final_activation(x)
+
+        model = keras.models.Model(resnet50.input, x, name="resnet50")
+        
         return model
 
     def cnn128(self):

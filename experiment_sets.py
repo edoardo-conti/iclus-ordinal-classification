@@ -3,6 +3,7 @@ import sys
 import shutil
 import csv
 import json
+import datetime
 from typing import Tuple
 import tensorflow as tf
 from keras import mixed_precision
@@ -19,7 +20,7 @@ class ExperimentSets:
                  max_qsize:int = 100,
                  verbose:int = 1,
                  output_mode:Tuple[int, int] = (0, 1),
-                 random_state:int = 42):
+                 seed:int = 42):
         self.exps_json_path = exps_json_path
         self.dataset_dir = dataset_dir
         self.results_dir = results_dir
@@ -29,7 +30,7 @@ class ExperimentSets:
         self.max_qsize = max_qsize
         self.verbose = verbose
         self.output_mode = output_mode
-        self.random_state = random_state
+        self.seed = seed
         
         # dataset attributes
         self.ds_img_size = 224
@@ -38,12 +39,10 @@ class ExperimentSets:
 
         # params to be computed
         self.host_hw = {}
-
         self.exps = None
         self.tot_exps = 0
-        
+        self.logs_path = None
         self.dataset = None
-
         self.csv_results_path = None
         self.csv_columns = []
                 
@@ -58,6 +57,7 @@ class ExperimentSets:
         self.load_experiments()
         self.load_dataset()
         self.init_results()
+        self.init_logs()
 
         return self.export_set_config()
 
@@ -114,9 +114,9 @@ class ExperimentSets:
     
 
     def load_dataset(self):
-        self.dataset = DatasetHandler(self.dataset_dir, 
+        self.dataset = DatasetHandler(dataset_dir = self.dataset_dir, 
                                       shuffle_bsize = self.shuffle_bsize,
-                                      random_state = self.random_state)
+                                      seed = self.seed)
         self.dataset.build()
         print('✔ dataset loaded')
 
@@ -124,12 +124,12 @@ class ExperimentSets:
     def init_results(self):
         # declare the CSV file path and columns
         self.csv_results_path = os.path.join(self.results_dir, "results.csv")
-        self.csv_columns = ["experiment", "ccr", "mae", "ms", "rmse", "acc_1off", "qwk"]
-        
+        self.csv_columns = ["experiment", "ccr", "f1", "acc_1off", "acc_2off", "qwk", "spearman", "mae", "amae", "mmae", "rmse", "ms"]
+
         # TODO: before doing anything ask for a confirmation
         # confirmation = input("Do you want to delete existing run files? (y/[N]): ").lower()
         confirmation = 'y'
-
+        
         # experiments checkpoint file 
         if confirmation == 'y':
             # clean the previous results and re-make the directory
@@ -145,13 +145,22 @@ class ExperimentSets:
             with open(self.csv_results_path, mode='w', encoding='UTF-8', newline='') as csv_file:
                 writer = csv.writer(csv_file)
                 writer.writerow(self.csv_columns)
+        
+        print('✔ results initialized\n')
 
-        print('✔ results initialized')
+    
+    def init_logs(self):
+        # get the logs file path and current date/time
+        self.logs_path = os.path.join(self.results_dir, 'experiments_logs.txt')
+        timelog = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # log the start of the run
+        with open(self.logs_path, 'w') as log_file: log_file.write(f"{timelog} - Start\n")
 
     
     def export_set_config(self):
-        params_to_exclude = ['exps_json_path', 'dataset_dir', 'mp_xla', 'shuffle_bsize', 
-                             'random_state', 'host_hw', 'exps', 'tot_exps']
+        params_to_exclude = ['exps_json_path', 'dataset_dir', 'mp_xla', 
+                             'shuffle_bsize', 'host_hw', 'exps', 'tot_exps']
         config = {key: value for key, value in self.__dict__.items() if key not in params_to_exclude}
 
         return config

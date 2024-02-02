@@ -1,20 +1,21 @@
-import tensorflow as tf
-import tensorflow_probability as tfp
-import keras
 import numpy as np
-from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
+import tensorflow as tf
+from sklearn.preprocessing import label_binarize
+from sklearn.metrics import confusion_matrix, roc_curve, auc
 
 class Metrics:
     def __init__(self, num_classes, nn_type):
         self.num_classes = num_classes
         self.nn_type = nn_type
+
+        # target class vector (obd-only)
         self.target_class = self._build_obd_target_class()
-        
+    
     def _build_obd_target_class(self):
         target_class = tf.ones((self.num_classes, self.num_classes - 1), dtype=tf.float32)
-
+        
         return 1 - tf.linalg.band_part(target_class, 0, -1) 
     
     def _check_nn_ytrue(self, y_true):
@@ -60,7 +61,6 @@ class Metrics:
         return ccr_value
 
     def ms(self, y_true, y_pred):
-        # !NOT SURE IF WORKING!
         # check the neural network ground truth and prediction
         y_true = self._check_nn_ytrue(y_true)
         y_pred = self._check_nn_ypred(y_pred)
@@ -93,8 +93,36 @@ class Metrics:
     
         absolute_errors = tf.abs(y_true - y_pred)
         mean_absolute_error = tf.reduce_sum(absolute_errors) / tf.cast(tf.shape(y_true)[0], dtype=tf.int64)
-    
+
         return mean_absolute_error
+
+    def amae(self, y_true, y_pred):
+        # check the neural network ground truth and prediction
+        y_true = self._check_nn_ytrue(y_true)
+        y_pred = self._check_nn_ypred(y_pred)
+
+        # converting to int64 tensors
+        y_true = tf.convert_to_tensor(y_true, dtype=tf.int64)
+        y_pred = tf.convert_to_tensor(y_pred, dtype=tf.int64)
+
+        absolute_errors = tf.abs(y_true - y_pred)
+        average_absolute_error = tf.reduce_mean(absolute_errors)
+
+        return average_absolute_error
+
+    def mmae(self, y_true, y_pred):
+        # check the neural network ground truth and prediction
+        y_true = self._check_nn_ytrue(y_true)
+        y_pred = self._check_nn_ypred(y_pred)
+
+        # converting to int64 tensors
+        y_true = tf.convert_to_tensor(y_true, dtype=tf.int64)
+        y_pred = tf.convert_to_tensor(y_pred, dtype=tf.int64)
+
+        absolute_errors = tf.abs(y_true - y_pred)
+        max_absolute_error = tf.reduce_max(absolute_errors)
+
+        return max_absolute_error
 
     def rmse(self, y_true, y_pred):
         # check the neural network ground truth and prediction
@@ -109,45 +137,102 @@ class Metrics:
 
         return root_mean_squared_error
 
-    def acc_1off(self, y_true, y_pred):
+    def acc_koff(self, y_true, y_pred, k):
         # check the neural network ground truth and prediction
         y_true = self._check_nn_ytrue(y_true)
         y_pred = self._check_nn_ypred(y_pred)
-        
+
         conf_mat = tf.math.confusion_matrix(y_true, y_pred, num_classes=self.num_classes, dtype=tf.float32)
         n = tf.shape(conf_mat)[0]
 
-        #mask = tf.eye(n) + tf.eye(n, delta=1) + tf.eye(n, delta=-1)
-        mask = tf.linalg.diag(tf.ones(n)) + tf.linalg.diag(tf.ones(n - 1), k=1) + tf.linalg.diag(tf.ones(n - 1), k=-1)
+        # Create a mask to select elements in a diagonal band around the main diagonal
+        mask = tf.linalg.diag(tf.ones(n))
+        for i in range(1, k + 1):
+            mask += tf.linalg.diag(tf.ones(n - i), k=i) + tf.linalg.diag(tf.ones(n - i), k=-i)
+
         correct = mask * conf_mat
-        
-        accuracy_1off = tf.reduce_sum(correct) / tf.reduce_sum(conf_mat)
 
-        return accuracy_1off
+        accuracy_koff = tf.reduce_sum(correct) / tf.reduce_sum(conf_mat)
 
-    def top_2_acc(self, y_true, y_pred):
-        # convert the OBD output into probability for each class
-        y_pred = self._check_obd_ypred_probas(y_pred)
+        return accuracy_koff
 
-        return keras.metrics.top_k_categorical_accuracy(y_true, y_pred, k=2)
-
-    def top_3_acc(self, y_true, y_pred):
-        # convert the OBD output into probability for each class
-        y_pred = self._check_obd_ypred_probas(y_pred)
-
-        return keras.metrics.top_k_categorical_accuracy(y_true, y_pred, k=3)
+    def acc_1off(self, y_true, y_pred):
+        return self.acc_koff(y_true, y_pred, k=1)
     
-    # Kendall rank correlation coefficient (Kendall's tau)
-    # TODO: cannot be computed if the predictions are all the same 
-    def kendall(self, y_true, y_pred):
+    def acc_2off(self, y_true, y_pred):
+        return self.acc_koff(y_true, y_pred, k=2)
+    
+    def f1_weighted(self, y_true, y_pred):
+        # F1 weighted implementation
         # check the neural network ground truth and prediction
         y_true = self._check_nn_ytrue(y_true)
         y_pred = self._check_nn_ypred(y_pred)
 
-        # Calculate Kendall's tau correlation
-        corr = tfp.stats.kendalls_tau(y_true, y_pred)
+        # Calculate confusion matrix
+        cm = tf.math.confusion_matrix(y_true, y_pred, num_classes=4, dtype=tf.float32)
+
+        # Calculate sum of true positives (TP), false positives (FP), and false negatives (FN) for each class
+        sum_TP = tf.linalg.diag_part(cm)
+        sum_FP = tf.reduce_sum(cm, axis=0) - sum_TP
+        sum_FN = tf.reduce_sum(cm, axis=1) - sum_TP
+
+        # Calculate precision, recall, and F1 score for each class
+        precision = sum_TP / (sum_TP + sum_FP)
+        recall = sum_TP / (sum_TP + sum_FN)
+        f1_score = 2 * (precision * recall) / (precision + recall)
+
+        # Calculate weighted average of F1 score
+        weighted_f1 = tf.reduce_sum(f1_score * tf.reduce_sum(cm, axis=1)) / tf.where(tf.reduce_sum(cm, axis=1) > 0, tf.reduce_sum(cm, axis=1), 1.0)
+
+        return weighted_f1
+    
+    def f1_macro(self, y_true, y_pred):
+        # F1 macro implementation
+        # check the neural network ground truth and prediction
+        y_true = self._check_nn_ytrue(y_true)
+        y_pred = self._check_nn_ypred(y_pred)
+
+        # Calculate confusion matrix
+        cm = tf.math.confusion_matrix(y_true, y_pred, num_classes=4, dtype=tf.float32)
+
+        # Calculate sum of true positives (TP), false positives (FP), and false negatives (FN) for each class
+        sum_TP = tf.linalg.diag_part(cm)
+        sum_FP = tf.reduce_sum(cm, axis=0) - sum_TP
+        sum_FN = tf.reduce_sum(cm, axis=1) - sum_TP
+
+        # Calculate precision, recall, and F1 score for each class
+        precision = sum_TP / (sum_TP + sum_FP)
+        recall = sum_TP / (sum_TP + sum_FN)
+        f1_score = 2 * (precision * recall) / (precision + recall)
+
+        # Calculate macro-average of F1 score
+        macro_f1 = tf.reduce_mean(f1_score)
+
+        return macro_f1
+
+    def f1(self, y_true, y_pred):
+        # F1 micro implementation
+        # check the neural network ground truth and prediction
+        y_true = self._check_nn_ytrue(y_true)
+        y_pred = self._check_nn_ypred(y_pred)
+
+        # Calculate confusion matrix
+        cm = tf.math.confusion_matrix(y_true, y_pred, num_classes=4, dtype=tf.float32)
+
+        # Calculate sum of true positives (TP), false positives (FP), and false negatives (FN) for each class
+        sum_TP = tf.linalg.diag_part(cm)
+        sum_FP = tf.reduce_sum(cm, axis=0) - sum_TP
+        sum_FN = tf.reduce_sum(cm, axis=1) - sum_TP
         
-        return corr
+        # Calculate precision, recall, and F1 score for each class
+        precision = sum_TP / (sum_TP + sum_FP)
+        recall = sum_TP / (sum_TP + sum_FN)
+        f1_score = 2 * (precision * recall) / (precision + recall)
+
+        # Calculate micro-average of F1 score
+        micro_f1 = tf.reduce_sum(f1_score * tf.reduce_sum(cm, axis=1)) / tf.reduce_sum(tf.reduce_sum(cm, axis=1))
+
+        return micro_f1
 
     # Spearman rank correlation coefficient
     def spearman(self, y_true, y_pred):
@@ -158,16 +243,16 @@ class Metrics:
         # float32 casting
         y_true = tf.cast(y_true, tf.float32)
         y_pred = tf.cast(y_pred, tf.float32)
-
+        
         y_mean = tf.reduce_mean(y_true)
         ypred_mean = tf.reduce_mean(y_pred)
 
         num = tf.reduce_sum((y_true - y_mean) * (y_pred - ypred_mean))
         div = tf.sqrt(tf.reduce_sum(tf.square(y_true - y_mean)) * tf.reduce_sum(tf.square(y_pred - ypred_mean)))
 
-        result = tf.where(tf.math.equal(num, 0), 0.0, num / div)
+        spearman = tf.where(tf.math.equal(num, 0), 0.0, num / div)
 
-        return result
+        return spearman
 
     def qwk(self, rater_a, rater_b, min_rating=0, max_rating=None):
         """
@@ -267,8 +352,8 @@ class Metrics:
                 denominator += d * expected_count / num_scored_items
 
         return 1.0 - numerator / denominator
-    
-    def confusion_matrix(self, y_true, y_pred, show=True):
+
+    def confusion_matrix(self, y_true, y_pred, show=False):
         # check the neural network ground truth and prediction
         y_true = self._check_nn_ytrue(y_true)
         y_pred = self._check_nn_ypred(y_pred)
@@ -282,6 +367,40 @@ class Metrics:
         ax.set_title('Test Set Confusion Matrix')
         
         # Show the plot
+        if show:
+            plt.show()
+
+        return plt.gcf()
+    
+    def rocs_per_class(self, y_true, y_pred, show=False):
+        # Binarizza le etichette
+        y_true_bin = label_binarize(y_true, classes=[0, 1, 2, 3])
+
+        # controlla le predictions se la rete è OBD
+        y_pred = self._check_obd_ypred_probas(y_pred)
+
+        # Inizializza una singola figura con 2x2 assi
+        _, axs = plt.subplots(nrows=2, ncols=2, figsize=(10, 8))
+
+        # Calcola curve ROC e AUC per ogni classe
+        for i, ax in enumerate(axs.flatten()):
+            fpr, tpr, _ = roc_curve(y_true_bin[:, i], y_pred[:, i])
+            
+            # Calcola l'AUC
+            auc_val = auc(fpr, tpr)
+
+            # Plot della curva ROC per ogni classe
+            ax.plot(fpr, tpr, color='darkorange', lw=2, label='ROC curve (AUC = {:.2f})'.format(auc_val))
+            ax.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+            ax.set_xlabel('FPR')
+            ax.set_ylabel('TPR')
+            ax.set_title('ROC - Class {}'.format(i))
+            ax.legend(loc='lower right')
+
+        # Ottimizza la disposizione dei grafici
+        plt.tight_layout()
+        
+        # Mostra la figura
         if show:
             plt.show()
 
