@@ -22,3 +22,4 @@ results/*
 
 # tensorboard
 logs/fit/*
+test_pdf.ipynb
