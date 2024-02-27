@@ -3,6 +3,7 @@ import tensorflow as tf
 import keras
 from keras.applications import VGG16, ResNet50
 from network.clm import CumulativeLinkModel
+from network.roysota import CNNConStn
 
 class NeuralNetwork:
     def __init__(self, 
@@ -276,7 +277,7 @@ class NeuralNetwork:
         model = keras.models.Model(vgg16.input, x, name="vgg16")
         
         return model
-    
+
     def vgg16_imagenet(self):
         vgg16 = self._vgg16_convnet(self.input_shape, weights='imagenet', frozen=True)
         x = vgg16.output
@@ -286,4 +287,10 @@ class NeuralNetwork:
 
         model = keras.models.Model(vgg16.input, x, name="vgg16")
         
+        return model
+
+    def roysota(self):
+        #model = CNNConStn(self.size, self.num_classes)
+        model = tf.keras.models.load_model("roymodel_tf")
+
         return model
