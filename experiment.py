@@ -9,10 +9,9 @@ from sklearn.model_selection import ParameterGrid
 from keras import backend as K
 from keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from network.model import NeuralNetwork
-from network.losses import make_cost_matrix, qwk_loss, ordinal_distance_loss
+from network.losses import make_cost_matrix, qwk_loss, ordinal_distance_loss, sord_loss, roy_cce_loss
 from network.metrics import Metrics
 from network.callbacks import GradCAMCallback
-
 
 class Experiment:
     def __init__(self, 
@@ -68,7 +67,7 @@ class Experiment:
     
     @property
     def verbose(self):
-        return self.set_config.get('verbose', 0)
+        return self.set_config.get('verbose', 1)
     
     @property
     def max_qsize(self):
@@ -264,8 +263,10 @@ class Experiment:
     # set the experiment state to the current HPT holdout (model training phase)
     def set_current_hpt_holdout(self, hpt_curr_split, hpt_train, hpt_val):
         self.hpt_curr_split = hpt_curr_split
-        self.hpt_train = list(hpt_train)
-        self.hpt_val = list(hpt_val)
+        # self.hpt_train = list(hpt_train)
+        # self.hpt_val = list(hpt_val)
+        self.hpt_train = list(hpt_train)[:2]
+        self.hpt_val = list(hpt_val)[:1]
 
         # create the folder for this training holdout in the current fold
         self.hpt_holdout_dir = os.path.join(self.fold_subdir, f'holdout_{self.hpt_curr_split}/')
@@ -331,7 +332,7 @@ class Experiment:
                                            y_val=self.y_hpt_val,
                                            epochs=epochs, 
                                            batch_size=batch_size,
-                                           gradcam_freq=3,
+                                           gradcam_freq=0,
                                            rlop=rlop
                                            )
         
@@ -400,29 +401,42 @@ class Experiment:
         optimizer = self.settings['optimizer']
         
         # optimizer
+        # if optimizer.lower() == 'adam':
+        #     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate,
+        #                                         weight_decay=self.settings['weight_decay'])
+        # else:
+        #     optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate,
+        #                                         weight_decay=self.settings['weight_decay'],
+        #                                         momentum=self.settings['momentum'])
+        
+        # optimizer (for M1 mac)
         if optimizer.lower() == 'adam':
-            optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=learning_rate)
+            optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=learning_rate,
+                                                        decay=self.settings['weight_decay'])
         else:
             optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=learning_rate,
-                                                       decay=self.settings['weight_decay'],
-                                                       momentum=self.settings['momentum'])
+                                                        decay=self.settings['weight_decay'],
+                                                        momentum=self.settings['momentum'])
 
         # loss function
-        if loss == 'ODL':
-            loss = ordinal_distance_loss(self.ds_num_classes)
-        elif loss == 'CCE':
+        if loss == 'CCE':
             loss = tf.keras.losses.CategoricalCrossentropy()
+        elif loss == 'ODL':
+            loss = ordinal_distance_loss(self.ds_num_classes)
         elif loss == 'QWK':
             cost_matrix = K.constant(make_cost_matrix(self.ds_num_classes), dtype=K.floatx())
             loss = qwk_loss(cost_matrix)
-        
+        elif loss == 'SORD':
+            loss = sord_loss(self.settings['nn_model'])
+            # loss = roy_cce_loss()
+
         # metrics
         metrics_t = Metrics(self.ds_num_classes, self.settings['nn_model'])
         train_metrics = [getattr(metrics_t, metric_name) for metric_name in metrics if metric_name not in self.train_metrics_exl]
         
         # compile
         model.compile(optimizer=optimizer, loss=loss, metrics=train_metrics)
-
+        
         if summary:
             print(model.summary())
 
@@ -468,7 +482,7 @@ class Experiment:
         #ckpt_filename = os.path.join(self.exp_results_subdir, "weights/", f"{cvcs}_best_weights.h5")
         log_dir = f"logs/fit/{self.exp_name}_fold{self.current_fold}_holdout{self.hpt_curr_split}"
         #log_dir = os.path.join(self.hpt_holdout_dir, "logs/fit/")
-        es_patience = 25 if rlop else 30
+        es_patience = 20 if rlop else 30
         
         # callbacks
         tensorboard = TensorBoard(log_dir=log_dir, histogram_freq=1)
@@ -484,7 +498,7 @@ class Experiment:
         # calcolo peso classi
         class_weight = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
         class_weight = dict(enumerate(np.round(class_weight, self.ds_num_classes)))
-
+        
         # compute train and val steps per epoch
         train_steps_per_epoch = len(y_train) // batch_size
         val_steps_per_epoch = len(y_val) // batch_size

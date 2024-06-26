@@ -33,8 +33,15 @@ class Metrics:
             
             # Find the index of the minimum distance as the predicted label
             y_pred = tf.argmin(distances, axis=1)
+        elif self.nn_type == 'roysota':
+            output_1, _ = tf.split(y_pred, num_or_size_splits=2, axis=0)
+            probas = tf.nn.softmax(output_1, axis=1)
+            y_pred = tf.argmax(probas, axis=1)
+            # y_pred = tf.argmax(tf.nn.softmax(y_pred, axis=1), axis=1) 
         else:
             y_pred = tf.argmax(y_pred, axis=-1) 
+        
+        # tf.print("y_pred", y_pred)
 
         return y_pred
 
@@ -44,7 +51,9 @@ class Metrics:
             distances = tf.norm(tf.expand_dims(y_pred, 1) - self.target_class, axis=2, ord='euclidean')
             
             y_pred = tf.nn.softmax(-distances)
-        
+        if self.nn_type == 'roysota':
+            output_1, _ = tf.split(y_pred, num_or_size_splits=2)
+            y_pred = tf.nn.softmax(output_1, axis=1)
         return y_pred
 
     def ccr(self, y_true, y_pred):

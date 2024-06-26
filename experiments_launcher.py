@@ -149,7 +149,7 @@ def main():
                 else:
                     best_params = {'batch_size': exp_sett["batch_size"][0], 'dropout': exp_sett["dropout"][0], 'learning_rate': exp_sett["learning_rate"][0]}
 
-            print(best_params)
+            # print(best_params)
 
             # ~~~~~~~~~~~~~~~~~~~~~~ NETWORK TRAINING HOLDOUTS ~~~~~~~~~~~~~~~~~~~~~~
             hpt_sss = exp_ds.n_strat_shuffle_split(train_pats, labels_pats, val_ratio=0.15, splits=args.hpt_splits, state=f"{curr_fold}_hpt")

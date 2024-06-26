@@ -290,7 +290,7 @@ class NeuralNetwork:
         return model
 
     def roysota(self):
-        #model = CNNConStn(self.size, self.num_classes)
-        model = tf.keras.models.load_model("roymodel_tf")
-
+        model = CNNConStn(self.size, self.num_classes)
+        # model = tf.keras.models.load_model("roymodel_tf")
+        
         return model
