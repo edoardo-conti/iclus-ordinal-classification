@@ -41,13 +41,15 @@ class Metrics:
 
         return y_pred
 
-    def _check_obd_ypred_probas(self, y_pred):
+    def _check_ypred_probas(self, y_pred):
         if self.nn_type == 'obd':
             # Calculate pairwise distances between y_pred and target_class using Euclidean distance
             distances = tf.norm(tf.expand_dims(y_pred, 1) - self.target_class, axis=2, ord='euclidean')
-            
             y_pred = tf.nn.softmax(-distances)
-        
+        elif self.nn_type == 'roycnnstn':
+            output, _ = tf.split(y_pred, num_or_size_splits=2, axis=0)
+            y_pred = tf.nn.softmax(output, axis=1)
+
         return y_pred
 
     def ccr(self, y_true, y_pred):
@@ -380,7 +382,7 @@ class Metrics:
         y_true_bin = label_binarize(y_true, classes=[0, 1, 2, 3])
 
         # controlla le predictions se la rete è OBD
-        y_pred = self._check_obd_ypred_probas(y_pred)
+        y_pred = self._check_ypred_probas(y_pred)
 
         # Inizializza una singola figura con 2x2 assi
         _, axs = plt.subplots(nrows=2, ncols=2, figsize=(10, 8))

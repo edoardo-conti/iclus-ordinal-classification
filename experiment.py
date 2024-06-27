@@ -1,4 +1,5 @@
 import os
+import platform
 import csv
 import json
 import numpy as np
@@ -400,11 +401,14 @@ class Experiment:
         metrics = self.settings['metrics']
         optimizer = self.settings['optimizer']
         
-        # optimizer
+        # optimizer (w/ apple silicon fix)
+        is_applesilicon = platform.processor() == 'arm' or platform.machine() == 'arm64'
+        tf_keras_opt = tf.keras.optimizers.legacy if is_applesilicon else tf.keras.optimizers
+
         if optimizer.lower() == 'adam':
-            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+            optimizer = tf_keras_opt.Adam(learning_rate=learning_rate)
         else:
-            optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate,
+            optimizer = tf_keras_opt.SGD(learning_rate=learning_rate,
                                                 decay=self.settings['weight_decay'],
                                                 momentum=self.settings['momentum'])
 
@@ -492,6 +496,9 @@ class Experiment:
         # compute train and val steps per epoch
         train_steps_per_epoch = len(y_train) // batch_size
         val_steps_per_epoch = len(y_val) // batch_size
+
+        #train_steps_per_epoch = 10
+        #val_steps_per_epoch = 10
         
         # neural network fit   
         history = model.fit(train_ds,
@@ -569,6 +576,8 @@ class Experiment:
         
         # compute test steps per epoch
         test_steps_per_epoch = -(-len(y_test) // batch_size)
+
+        #test_steps_per_epoch = 10
 
         # model evaluation, get the predictions by running the model inference
         y_test_pred = model.predict(X_test,
