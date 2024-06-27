@@ -9,11 +9,7 @@ from sklearn.model_selection import ParameterGrid
 from keras import backend as K
 from keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from network.model import NeuralNetwork
-<<<<<<< Updated upstream
-from network.losses import make_cost_matrix, qwk_loss, ordinal_distance_loss, sord_loss, roy_cce_loss
-=======
 from network.losses import roy_cnnstn_loss, make_cost_matrix, qwk_loss, ordinal_distance_loss
->>>>>>> Stashed changes
 from network.metrics import Metrics
 from network.callbacks import GradCAMCallback
 
@@ -423,12 +419,6 @@ class Experiment:
                                                         momentum=self.settings['momentum'])
 
         # loss function
-<<<<<<< Updated upstream
-        if loss == 'CCE':
-            loss = tf.keras.losses.CategoricalCrossentropy()
-        elif loss == 'ODL':
-            loss = ordinal_distance_loss(self.ds_num_classes)
-=======
         if loss == 'ODL':
             loss = ordinal_distance_loss(self.ds_num_classes)
         elif loss == 'CCE':
@@ -436,13 +426,9 @@ class Experiment:
                 loss = roy_cnnstn_loss()
             else:
                 loss = tf.keras.losses.CategoricalCrossentropy()            
->>>>>>> Stashed changes
         elif loss == 'QWK':
             cost_matrix = K.constant(make_cost_matrix(self.ds_num_classes), dtype=K.floatx())
             loss = qwk_loss(cost_matrix)
-        elif loss == 'SORD':
-            loss = sord_loss(self.settings['nn_model'])
-            # loss = roy_cce_loss()
 
         # metrics
         metrics_t = Metrics(self.ds_num_classes, self.settings['nn_model'])

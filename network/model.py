@@ -3,11 +3,7 @@ import tensorflow as tf
 import keras
 from keras.applications import VGG16, ResNet50
 from network.clm import CumulativeLinkModel
-<<<<<<< Updated upstream
-from network.roysota import CNNConStn
-=======
 from network.cnnstn import CNNStn
->>>>>>> Stashed changes
 
 class NeuralNetwork:
     def __init__(self, 
@@ -294,15 +290,9 @@ class NeuralNetwork:
         model = keras.models.Model(vgg16.input, x, name="vgg16")
         
         return model
-<<<<<<< Updated upstream
-
-    def roysota(self):
-        model = CNNConStn(self.size, self.num_classes)
-=======
     
     def roycnnstn(self):
         model = CNNStn(self.size, self.num_classes, self.nn_batch_size, fixed_scale=True)
->>>>>>> Stashed changes
         # model = tf.keras.models.load_model("roymodel_tf")
         
         return model

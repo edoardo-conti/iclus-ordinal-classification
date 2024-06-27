@@ -1,9 +1,4 @@
 [
-<<<<<<< Updated upstream
-    {"nn_model":"resnet18", "folds": 5, "epochs":100, "batch_size":[8,16,32,64], "dropout":[0.0,0.1,0.2,0.3,0.4], "augmentation":true, "loss":"QWK", "metrics":["ccr","f1","acc_1off","acc_2off","qwk","spearman","mae","amae","mmae","rmse","ms"], "optimizer":"Adam", "learning_rate":[1e-2,1e-3,1e-4,"cdr"], "weight_decay":1e-6, "momentum":0.9},
-    {"nn_model":"roysota", "folds": 5, "epochs":2, "batch_size":[32], "dropout":[0.3], "augmentation":true, "loss":"SORD", "metrics":["ccr","f1","acc_1off","acc_2off","qwk","spearman","mae","amae","mmae","rmse","ms"], "optimizer":"Adam", "learning_rate":[1e-4], "weight_decay":1e-4, "momentum":0.9}
-=======
     {"nn_model":"roycnnstn", "folds": 5, "epochs":5, "batch_size":[64], "dropout":[0.3], "augmentation":true, "loss":"CCE", "metrics":["ccr","f1","acc_1off","acc_2off","qwk","spearman","mae","amae","mmae","rmse","ms"], "optimizer":"Adam", "learning_rate":[1e-4], "weight_decay":1e-6, "momentum":0.9},
     {"nn_model":"resnet18", "folds": 5, "epochs":5, "batch_size":[32], "dropout":[0.3], "augmentation":true, "loss":"CCE", "metrics":["ccr","f1","acc_1off","acc_2off","qwk","spearman","mae","amae","mmae","rmse","ms"], "optimizer":"Adam", "learning_rate":["cdr"], "weight_decay":1e-6, "momentum":0.9}
->>>>>>> Stashed changes
 ]
