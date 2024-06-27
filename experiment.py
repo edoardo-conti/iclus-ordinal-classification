@@ -9,7 +9,11 @@ from sklearn.model_selection import ParameterGrid
 from keras import backend as K
 from keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from network.model import NeuralNetwork
+<<<<<<< Updated upstream
 from network.losses import make_cost_matrix, qwk_loss, ordinal_distance_loss, sord_loss, roy_cce_loss
+=======
+from network.losses import roy_cnnstn_loss, make_cost_matrix, qwk_loss, ordinal_distance_loss
+>>>>>>> Stashed changes
 from network.metrics import Metrics
 from network.callbacks import GradCAMCallback
 
@@ -299,7 +303,6 @@ class Experiment:
         
         # fix for reduce LR on plateau if using the scheduler
         rlop = True
-
         if learning_rate == 'cdr':
             total_steps = epochs * (len(self.y_hpt_train) // batch_size)
             first_decay_steps = int(0.2 * total_steps)
@@ -357,7 +360,7 @@ class Experiment:
     
     # method to build a neural network model with specific parameters
     def build_model(self, hyperparameters):
-        # get the network type: obd, clm, resnet18, cnn128, vgg16
+        # get the network type: obd, clm, resnet18, cnn128, vgg16, cnnstn (SOTA)
         nn_model = self.settings['nn_model']
         
         # get the common parameters between models
@@ -365,6 +368,7 @@ class Experiment:
             'ds_img_size': self.ds_img_size,
             'ds_img_channels': self.ds_img_channels,
             'ds_num_classes': self.ds_num_classes,
+            'nn_batch_size': hyperparameters['batch_size'],
             'nn_dropout': hyperparameters['dropout']
         }
 
@@ -419,10 +423,20 @@ class Experiment:
                                                         momentum=self.settings['momentum'])
 
         # loss function
+<<<<<<< Updated upstream
         if loss == 'CCE':
             loss = tf.keras.losses.CategoricalCrossentropy()
         elif loss == 'ODL':
             loss = ordinal_distance_loss(self.ds_num_classes)
+=======
+        if loss == 'ODL':
+            loss = ordinal_distance_loss(self.ds_num_classes)
+        elif loss == 'CCE':
+            if self.settings['nn_model'] == 'roycnnstn':
+                loss = roy_cnnstn_loss()
+            else:
+                loss = tf.keras.losses.CategoricalCrossentropy()            
+>>>>>>> Stashed changes
         elif loss == 'QWK':
             cost_matrix = K.constant(make_cost_matrix(self.ds_num_classes), dtype=K.floatx())
             loss = qwk_loss(cost_matrix)

@@ -33,11 +33,17 @@ class Metrics:
             
             # Find the index of the minimum distance as the predicted label
             y_pred = tf.argmin(distances, axis=1)
+<<<<<<< Updated upstream
         elif self.nn_type == 'roysota':
             output_1, _ = tf.split(y_pred, num_or_size_splits=2, axis=0)
             probas = tf.nn.softmax(output_1, axis=1)
             y_pred = tf.argmax(probas, axis=1)
             # y_pred = tf.argmax(tf.nn.softmax(y_pred, axis=1), axis=1) 
+=======
+        elif self.nn_type == 'roycnnstn':
+            output, _ = tf.split(y_pred, num_or_size_splits=2, axis=0)
+            y_pred = tf.argmax(tf.nn.softmax(output, axis=1), axis=1, output_type=tf.int64)[:, tf.newaxis]
+>>>>>>> Stashed changes
         else:
             y_pred = tf.argmax(y_pred, axis=-1) 
         
@@ -99,7 +105,7 @@ class Metrics:
         # converting to int64 tensors
         y_true = tf.convert_to_tensor(y_true, dtype=tf.int64)
         y_pred = tf.convert_to_tensor(y_pred, dtype=tf.int64)
-    
+
         absolute_errors = tf.abs(y_true - y_pred)
         mean_absolute_error = tf.reduce_sum(absolute_errors) / tf.cast(tf.shape(y_true)[0], dtype=tf.int64)
 

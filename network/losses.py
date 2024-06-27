@@ -62,6 +62,7 @@ def qwk_loss(cost_matrix):
     return _qwk_loss
 
 
+<<<<<<< Updated upstream
 def sord_loss(net_type, num_classes=4, multiplier=2, wide_gap_loss=False):
     def _sord_loss(ground_truth, logits):
         batch_size = tf.shape(ground_truth)[0]  # Ottieni il batch size come tensore simbolico
@@ -127,3 +128,18 @@ def roy_cce_loss():
         return cce(y_true, y_pred[0])
 
     return _roy_cce_loss
+=======
+def roy_cnnstn_loss():
+    cce = tf.keras.losses.CategoricalCrossentropy()
+
+    def _roy_cnnstn_loss(y_true, y_pred):
+        #y_pred_0, _ = tf.split(y_pred, num_or_size_splits=2)
+        #cce = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+
+        y_pred_0, _ = tf.split(y_pred, num_or_size_splits=2, axis=0)
+        y_pred_0 = tf.nn.softmax(y_pred_0, axis=1)
+
+        return cce(y_true, y_pred_0)
+
+    return _roy_cnnstn_loss
+>>>>>>> Stashed changes

@@ -55,9 +55,6 @@ def main():
         exp_ds = experiment.dataset
         num_folds = exp_ds.sgkfold(num_folds=experiment.settings['folds'], shuffle_folds=True)
 
-        # TODO: da rimuovere
-        # class_weights_collection = []
-
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ K-FOLDING ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         for curr_fold, (train_folds, test_fold) in enumerate(exp_ds.folds, start=1):
             print(f"\n~~~~~~~~~~~~~~~ FOLD {curr_fold}/{num_folds} ~~~~~~~~~~~~~~~")
@@ -76,16 +73,6 @@ def main():
             # extract folds labels
             _, fold_train_y = exp_ds.build_tfrecord_from_patients(list(train_pats))
             _, fold_test_y = exp_ds.build_tfrecord_from_patients(list(test_pats))
-
-            # # TODO: da rimuovere
-            # train_class_weight = compute_class_weight('balanced', classes=np.unique(fold_train_y), y=fold_train_y)
-            # test_class_weight = compute_class_weight('balanced', classes=np.unique(fold_test_y), y=fold_test_y)
-            
-            # class_weights_collection.append(train_class_weight)
-            # class_weights_collection.append(test_class_weight)
-            
-            # print(f"train_class_weight: {train_class_weight}")
-            # print(f"test_class_weight: {test_class_weight}")
 
             # print split charts of the current fold
             utilities.plot_pats_fold(experiment, train_pats, test_pats)
@@ -129,17 +116,6 @@ def main():
                 # Find the best combination of hyper-parameters from the grid search
                 best_params = experiment.compute_grid_search_results()
             else:
-                # load default good parameters combination for each network model
-                # Define default parameters for each network model
-                # default_params = {
-                #     'obd': {'batch_size': 32, 'dropout': 0.3, 'learning_rate': 'cdr', 'hidden_size': 512},
-                #     'clm': {'batch_size': 32, 'dropout': 0.0, 'learning_rate': 0.01, 'link_function': 'logit', 'use_tau': True},
-                #     'default': {'batch_size': 32, 'dropout': 0.0, 'learning_rate': 0.01}
-                # }
-
-                # Load default parameters based on the experiment's network model
-                # best_params = exp_params.get(experiment.settings['nn_model'], exp_params['default'])
-
                 # Load default parameters based on the experiment's network model
                 exp_sett = experiment.settings
                 if experiment.settings['nn_model'] == 'obd':
@@ -149,7 +125,11 @@ def main():
                 else:
                     best_params = {'batch_size': exp_sett["batch_size"][0], 'dropout': exp_sett["dropout"][0], 'learning_rate': exp_sett["learning_rate"][0]}
 
+<<<<<<< Updated upstream
             # print(best_params)
+=======
+            print(f"parameters: {best_params}")
+>>>>>>> Stashed changes
 
             # ~~~~~~~~~~~~~~~~~~~~~~ NETWORK TRAINING HOLDOUTS ~~~~~~~~~~~~~~~~~~~~~~
             hpt_sss = exp_ds.n_strat_shuffle_split(train_pats, labels_pats, val_ratio=0.15, splits=args.hpt_splits, state=f"{curr_fold}_hpt")
@@ -166,25 +146,10 @@ def main():
 
                 # prepare train and val sets from the patients got from the holdout
                 experiment.prepare_hpt_sets()
-                
-                # # TODO: da rimuovere
-                # hpt_train_class_weight = compute_class_weight('balanced', classes=np.unique(experiment.y_hpt_train), y=experiment.y_hpt_train)
-                # hpt_test_class_weight = compute_class_weight('balanced', classes=np.unique(experiment.y_hpt_val), y=experiment.y_hpt_val)
-                
-                # class_weights_collection.append(hpt_train_class_weight)
-                # class_weights_collection.append(hpt_test_class_weight)
-
-                # print(f"hpt_train_class_weight: {hpt_train_class_weight}")
-                # print(f"hpt_test_class_weight: {hpt_test_class_weight}")
 
                 # print the patients splitting in the train and test sets for the current fold
                 utilities.plot_fdistr_per_class(experiment, phase='hpt')
                 
-                #hpt_train = exp_ds.generate_tfrset(experiment.hpt_train, batch_size=experiment.settings['batch_size'][0], shuffle=True, augment=True)
-                #exp_ds.plot_set_batches(hpt_train, experiment.settings['batch_size'][0])
-                
-                # continue
-
                 # train the network with the best parameters on the holdout and get the history 
                 hpt_model, hpt_history = experiment.hpt_train_network(best_params)
 
@@ -195,21 +160,6 @@ def main():
                 experiment.hpt_test_network(test_pats, hpt_model, best_params)
 
         print("\n")
-
-        # # TODO: da rimuovere
-        # reference_class_weights = np.array([0.73754569, 1.03050017, 0.77646005, 2.5916608])
-        # class_weights_with_different_shape, mean_class_weights, std_class_weights = utilities.compute_class_weights_mean(class_weights_collection)
-        # distance = utilities.euclidean_distance(mean_class_weights, reference_class_weights)
-
-        # with open("class_weights_seed.txt", "a") as file:
-        #     file.write(f"Seed: {args.seed}\n")
-        #     file.write(f"Class Weights with different shape ({len(class_weights_with_different_shape)}): {class_weights_with_different_shape}\n")
-        #     file.write(f"Reference Class Weights:\t{reference_class_weights}\n")
-        #     file.write(f"Mean Class Weights:\t\t{mean_class_weights}\n")
-        #     file.write(f"St.Dev. Class Weights:\t\t{std_class_weights}\n")
-        #     file.write(f"Euclidean Distance:\t\t{distance}\n\n")
-
-        # break
 
     utilities.log_this(experiments_set.logs_path, f"End", p=False)
     print("★★★★★★★★★★★★★★★★★★★★★★★★★★★★★ END ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★\n")

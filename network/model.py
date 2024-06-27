@@ -3,7 +3,11 @@ import tensorflow as tf
 import keras
 from keras.applications import VGG16, ResNet50
 from network.clm import CumulativeLinkModel
+<<<<<<< Updated upstream
 from network.roysota import CNNConStn
+=======
+from network.cnnstn import CNNStn
+>>>>>>> Stashed changes
 
 class NeuralNetwork:
     def __init__(self, 
@@ -11,6 +15,7 @@ class NeuralNetwork:
                  ds_img_channels:int = 3,
                  ds_num_classes:int = 4,
                  nn_backbone:str = 'resnet18',
+                 nn_batch_size:int = 32,
                  nn_dropout:float = 0.0,
                  nn_activation:str = 'relu',
                  clm_link:str = 'logit',
@@ -20,6 +25,7 @@ class NeuralNetwork:
         self.num_channels = ds_img_channels
         self.num_classes = ds_num_classes
         self.nn_backbone = nn_backbone
+        self.nn_batch_size = nn_batch_size
         self.dropout = nn_dropout
         self.activation = nn_activation
         self.clm_link = clm_link
@@ -288,9 +294,15 @@ class NeuralNetwork:
         model = keras.models.Model(vgg16.input, x, name="vgg16")
         
         return model
+<<<<<<< Updated upstream
 
     def roysota(self):
         model = CNNConStn(self.size, self.num_classes)
+=======
+    
+    def roycnnstn(self):
+        model = CNNStn(self.size, self.num_classes, self.nn_batch_size, fixed_scale=True)
+>>>>>>> Stashed changes
         # model = tf.keras.models.load_model("roymodel_tf")
         
         return model
