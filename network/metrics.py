@@ -33,6 +33,9 @@ class Metrics:
             
             # Find the index of the minimum distance as the predicted label
             y_pred = tf.argmin(distances, axis=1)
+        elif self.nn_type == 'roycnnstn':
+            output, _ = tf.split(y_pred, num_or_size_splits=2, axis=0)
+            y_pred = tf.argmax(tf.nn.softmax(output, axis=1), axis=1, output_type=tf.int64)[:, tf.newaxis]
         else:
             y_pred = tf.argmax(y_pred, axis=-1) 
 

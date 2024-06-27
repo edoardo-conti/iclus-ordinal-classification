@@ -9,7 +9,7 @@ from sklearn.model_selection import ParameterGrid
 from keras import backend as K
 from keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from network.model import NeuralNetwork
-from network.losses import make_cost_matrix, qwk_loss, ordinal_distance_loss
+from network.losses import roy_cnnstn_loss, make_cost_matrix, qwk_loss, ordinal_distance_loss
 from network.metrics import Metrics
 from network.callbacks import GradCAMCallback
 
@@ -364,6 +364,7 @@ class Experiment:
             'ds_img_size': self.ds_img_size,
             'ds_img_channels': self.ds_img_channels,
             'ds_num_classes': self.ds_num_classes,
+            'nn_batch_size': hyperparameters['batch_size'],
             'nn_dropout': hyperparameters['dropout']
         }
 
@@ -401,17 +402,20 @@ class Experiment:
         
         # optimizer
         if optimizer.lower() == 'adam':
-            optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=learning_rate)
+            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
         else:
-            optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=learning_rate,
-                                                       decay=self.settings['weight_decay'],
-                                                       momentum=self.settings['momentum'])
+            optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate,
+                                                decay=self.settings['weight_decay'],
+                                                momentum=self.settings['momentum'])
 
         # loss function
         if loss == 'ODL':
             loss = ordinal_distance_loss(self.ds_num_classes)
         elif loss == 'CCE':
-            loss = tf.keras.losses.CategoricalCrossentropy()
+            if self.settings['nn_model'] == 'roycnnstn':
+                loss = roy_cnnstn_loss()
+            else:
+                loss = tf.keras.losses.CategoricalCrossentropy()  
         elif loss == 'QWK':
             cost_matrix = K.constant(make_cost_matrix(self.ds_num_classes), dtype=K.floatx())
             loss = qwk_loss(cost_matrix)

@@ -59,3 +59,14 @@ def qwk_loss(cost_matrix):
         return numerator / denominator
 
     return _qwk_loss
+
+def roy_cnnstn_loss():
+    cce = tf.keras.losses.CategoricalCrossentropy()
+
+    def _roy_cnnstn_loss(y_true, y_pred):
+        y_pred_0, _ = tf.split(y_pred, num_or_size_splits=2, axis=0)
+        y_pred_0 = tf.nn.softmax(y_pred_0, axis=1)
+        
+        return cce(y_true, y_pred_0)
+
+    return _roy_cnnstn_loss
