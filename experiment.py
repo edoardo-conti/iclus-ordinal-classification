@@ -10,7 +10,7 @@ from sklearn.model_selection import ParameterGrid
 from keras import backend as K
 from keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from network.model import NeuralNetwork
-from network.losses import roy_cnnstn_loss, make_cost_matrix, qwk_loss, ordinal_distance_loss
+from network.losses import  ordinal_distance_loss, make_cost_matrix, qwk_loss, roy_cce_loss, roy_sord_loss
 from network.metrics import Metrics
 from network.callbacks import GradCAMCallback
 
@@ -93,7 +93,7 @@ class Experiment:
 
 
     # build experiment name based on settings
-    def build_exp_name(self, gridsearch):
+    def build_exp_name(self, gridsearch):        
         # parameters not to be used to generate the experiment name
         if not gridsearch:
             incl_params = ["nn_model", "nn_backbone", "epochs", "augmentation", "loss", "optimizer"]
@@ -213,7 +213,7 @@ class Experiment:
         cv_model = self.build_model(hyperparameters=hyperparameters)
 
         # compile the model with the current LR
-        self.compile_model(cv_model, learning_rate=learning_rate)
+        self.compile_model(cv_model, learning_rate=learning_rate, batch_size=batch_size)
         
         # training the model for 10 epochs (default)
         hpv_history = self.cv_model_train(cv_model,
@@ -322,7 +322,7 @@ class Experiment:
         hpt_model = self.build_model(hyperparameters=best_hyperparameters)
         
         # compile the model with the best learning rate
-        self.compile_model(hpt_model, learning_rate=learning_rate)
+        self.compile_model(hpt_model, learning_rate=learning_rate, batch_size=batch_size)
         
         # training
         hpt_history = self.hpt_model_train(hpt_model,
@@ -396,7 +396,7 @@ class Experiment:
     
 
     # method to compile a neural network model with a specific LR
-    def compile_model(self, model, learning_rate, summary=False):
+    def compile_model(self, model, learning_rate=1e-4, batch_size=32, summary=False):
         loss = self.settings['loss']
         metrics = self.settings['metrics']
         optimizer = self.settings['optimizer']
@@ -411,18 +411,20 @@ class Experiment:
             optimizer = tf_keras_opt.SGD(learning_rate=learning_rate,
                                                 decay=self.settings['weight_decay'],
                                                 momentum=self.settings['momentum'])
-
-        # loss function
+        
+        # loss functions
         if loss == 'ODL':
             loss = ordinal_distance_loss(self.ds_num_classes)
         elif loss == 'CCE':
             if self.settings['nn_model'] == 'roycnnstn':
-                loss = roy_cnnstn_loss()
+                loss = roy_cce_loss()
             else:
                 loss = tf.keras.losses.CategoricalCrossentropy()  
         elif loss == 'QWK':
             cost_matrix = K.constant(make_cost_matrix(self.ds_num_classes), dtype=K.floatx())
             loss = qwk_loss(cost_matrix)
+        elif loss == 'SORD':
+            loss = roy_sord_loss(num_classes=self.ds_num_classes, batch_size=batch_size)
         
         # metrics
         metrics_t = Metrics(self.ds_num_classes, self.settings['nn_model'])
