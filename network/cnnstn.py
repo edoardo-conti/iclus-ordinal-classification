@@ -4,7 +4,7 @@ from keras import Model, layers, initializers
 class CNNStn(Model):
     def __init__(self, img_size, nclasses, batch_size=32, fixed_scale=True):
         super(CNNStn, self).__init__()
-
+        
         self.img_size = img_size
         self.nclasses = nclasses
         self.batch_size = batch_size
@@ -12,7 +12,7 @@ class CNNStn(Model):
 
         # Convolutional Blocks
         self.block1 = tf.keras.Sequential([
-            layers.Conv2D(32, (3, 3), strides=1, padding='same', input_shape=(None, None, 3)),
+            layers.Conv2D(32, (3, 3), strides=1, padding='same', input_shape=(img_size, img_size, 3)),
             layers.BatchNormalization(),
             layers.ReLU(),
             layers.Conv2D(32, (3, 3), strides=1, padding='same'),

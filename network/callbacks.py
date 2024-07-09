@@ -78,8 +78,22 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
         return np.expand_dims(keras.utils.img_to_array(img), axis=0)
 
 
+    def find_layer_recursive(self, model, layer_name):
+        for layer in model.layers:
+            if layer.name == layer_name:
+                return layer
+            if hasattr(layer, 'layers'):
+                found_layer = self.find_layer_recursive(layer, layer_name)
+                if found_layer:
+                    return found_layer
+        return None
+
     def make_gradcam_heatmap(self, img_array, model, last_conv_layer_name, pred_index=None):
-        last_conv_layer = model.get_layer(last_conv_layer_name)
+        if model.name == 'roycnnstn':
+            last_conv_layer = self.find_layer_recursive(model, last_conv_layer_name)
+        else:
+            last_conv_layer = model.get_layer(last_conv_layer_name)
+        
         grad_model = keras.models.Model(model.inputs, [last_conv_layer.output, model.output])
 
         with tf.GradientTape() as tape:
@@ -91,7 +105,7 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
         
         grads = tape.gradient(class_channel, last_conv_layer_output)
         pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-
+        
         heatmap = last_conv_layer_output[0] @ pooled_grads[..., tf.newaxis]
         heatmap = tf.squeeze(heatmap)
         heatmap = tf.maximum(heatmap, 0) / tf.reduce_max(heatmap)

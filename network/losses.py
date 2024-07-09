@@ -75,31 +75,32 @@ def roy_cce_loss():
     return _roy_cce_loss
 
 
-def roy_sord_loss(num_classes=4, batch_size=32, cost_mul=2, lambda_reg=1.):    
-    # create the SORD label
-    labels_sord = tf.Variable(tf.zeros([batch_size, num_classes], tf.int32))
-    
+def roy_sord_loss(cost_mul=2, lambda_reg=1.):    
     def _roy_sord_loss(y_true, y_pred):
+        # get the actual batch_size (and classes)
+        batch_size = tf.shape(y_true)[0]
+        num_classes = tf.shape(y_true)[1]
+        
         # split the network output and compute the prediction using log softmax for numerical stability
         y_pred_1, y_pred_2 = tf.split(y_pred, num_or_size_splits=2, axis=0)
         log_predictions_probs = tf.nn.log_softmax(y_pred_1, axis=1)
         
-        # reset the SORD label
-        labels_sord.assign(tf.zeros_like(labels_sord))
-        
+        # creating labels_sord with effective batch size x classes
+        labels_sord = tf.zeros([batch_size, num_classes], tf.int32)
+
         # build the SORD label
         for batch_idx in range(batch_size):
             current_label = tf.argmax(y_true[batch_idx], axis=0, output_type=tf.int32)
             for class_idx in range(num_classes):
                 value = tf.cast(cost_mul, tf.int32) * tf.math.square(tf.abs(current_label - class_idx))
-                labels_sord[batch_idx, class_idx].assign(value)
+                labels_sord = tf.tensor_scatter_nd_update(labels_sord, [[batch_idx, class_idx]], [value])
 
         # compute the softmax for the SORD labels
         labels_sord_probs = tf.nn.softmax(tf.cast(-labels_sord, tf.float32), axis=1)
 
         # cross entropy
         sord_loss = tf.reduce_mean(tf.reduce_sum(-labels_sord_probs * log_predictions_probs, axis=1))
-        
+
         # consistency loss
         mse_loss = lambda_reg * tf.reduce_mean(tf.square(y_pred_1 - y_pred_2))
         

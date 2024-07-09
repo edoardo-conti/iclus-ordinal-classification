@@ -213,7 +213,7 @@ class Experiment:
         cv_model = self.build_model(hyperparameters=hyperparameters)
 
         # compile the model with the current LR
-        self.compile_model(cv_model, learning_rate=learning_rate, batch_size=batch_size)
+        self.compile_model(cv_model, learning_rate=learning_rate)
         
         # training the model for 10 epochs (default)
         hpv_history = self.cv_model_train(cv_model,
@@ -322,8 +322,8 @@ class Experiment:
         hpt_model = self.build_model(hyperparameters=best_hyperparameters)
         
         # compile the model with the best learning rate
-        self.compile_model(hpt_model, learning_rate=learning_rate, batch_size=batch_size)
-        
+        self.compile_model(hpt_model, learning_rate=learning_rate)
+                
         # training
         hpt_history = self.hpt_model_train(hpt_model,
                                            train_ds=hpt_train,
@@ -332,7 +332,7 @@ class Experiment:
                                            y_val=self.y_hpt_val,
                                            epochs=epochs, 
                                            batch_size=batch_size,
-                                           gradcam_freq=3,
+                                           gradcam_freq=1,
                                            rlop=rlop
                                            )
         
@@ -353,8 +353,18 @@ class Experiment:
                             hpt_y_test,
                             batch_size=batch_size
                             )
-
     
+    # method to recursively search the last convolutional layer
+    def find_last_conv2d(self, layer):
+        if isinstance(layer, tf.keras.layers.Conv2D):
+            return layer
+        if isinstance(layer, tf.keras.Model):
+            for sub_layer in reversed(layer.layers):
+                result = self.find_last_conv2d(sub_layer)
+                if result is not None:
+                    return result
+        return None
+
     # method to build a neural network model with specific parameters
     def build_model(self, hyperparameters):
         # get the network type: obd, clm, resnet18, cnn128, vgg16
@@ -384,19 +394,16 @@ class Experiment:
         # build the defined neural network model 
         model = net_object.build(nn_model)
 
-        # auto-search the last convolutional layer of the model (uselful for GRAD-cams)
-        for layer in reversed(model.layers):
-            if isinstance(layer, tf.keras.layers.Conv2D):
-                self.last_conv_layer = layer.name
-                break
-        
+        # auto-search the last convolutional layer of the model (useful for GRAD-cams)
+        self.last_conv_layer = self.find_last_conv2d(model.layers[1] if nn_model == 'roycnnstn' else model).name
+
         print('◇ model built')
 
         return model
     
-
+    
     # method to compile a neural network model with a specific LR
-    def compile_model(self, model, learning_rate=1e-4, batch_size=32, summary=False):
+    def compile_model(self, model, learning_rate=1e-4, summary=True):
         loss = self.settings['loss']
         metrics = self.settings['metrics']
         optimizer = self.settings['optimizer']
@@ -424,7 +431,7 @@ class Experiment:
             cost_matrix = K.constant(make_cost_matrix(self.ds_num_classes), dtype=K.floatx())
             loss = qwk_loss(cost_matrix)
         elif loss == 'SORD':
-            loss = roy_sord_loss(num_classes=self.ds_num_classes, batch_size=batch_size)
+            loss = roy_sord_loss()
         
         # metrics
         metrics_t = Metrics(self.ds_num_classes, self.settings['nn_model'])
@@ -432,7 +439,7 @@ class Experiment:
         
         # compile
         model.compile(optimizer=optimizer, loss=loss, metrics=train_metrics)
-
+        
         if summary:
             print(model.summary())
 
@@ -499,8 +506,9 @@ class Experiment:
         train_steps_per_epoch = len(y_train) // batch_size
         val_steps_per_epoch = len(y_val) // batch_size
 
-        #train_steps_per_epoch = 10
-        #val_steps_per_epoch = 10
+        # ! testing purpose !
+        train_steps_per_epoch = 5
+        val_steps_per_epoch = 5
         
         # neural network fit   
         history = model.fit(train_ds,
