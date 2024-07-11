@@ -1,34 +1,44 @@
 #!/bin/bash
 
-results_dir="./results"
-logs_dir="./logs"
-backup_dir="./backup"
-kfold_labels="./kfold_labels.pkl"
+# Directories to be deleted
+directories=(
+    "./results"
+    "./logs"
+)
 
+# Files to be deleted
+files=(
+    "./kfold_labels.pkl"
+)
+
+# Function to delete a directory
 delete_directory() {
     local dir="$1"
     if [ -d "$dir" ]; then
         rm -r "$dir"
         echo "Directory '$dir' deleted"
     else
-        echo "Directory $dir do not exists"
+        echo "Directory '$dir' does not exist"
     fi
 }
 
+# Function to delete a file
 delete_file() {
     local file="$1"
     if [ -f "$file" ]; then
         rm "$file"
-        echo "File $file deleted"
+        echo "File '$file' deleted"
     else
-        echo "File $file do not exists"
+        echo "File '$file' does not exist"
     fi
 }
 
-# delete directories
-delete_directory "$results_dir"
-delete_directory "$logs_dir"
-delete_directory "$backup_dir"
+# Delete directories
+for dir in "${directories[@]}"; do
+    delete_directory "$dir"
+done
 
-# delete files
-delete_file "$kfold_labels"
+# Delete files
+for file in "${files[@]}"; do
+    delete_file "$file"
+done

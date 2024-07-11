@@ -1,5 +1,10 @@
+import os
 import argparse
 import utilities
+
+# set TensorFlow log level 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 from experiment_sets import ExperimentSets
 from experiment import Experiment
 
@@ -21,7 +26,7 @@ def main():
     args = parser.parse_args()
     
     print("\n★★★★★★★★★★★★★★★★★★★★★★★★★★★★ START ★★★★★★★★★★★★★★★★★★★★★★★★★★★★\n")
-    
+
     # initialization of the set of experiments class with global settings
     experiments_set = ExperimentSets(exps_json_path = args.exps_json,
                                      dataset_dir = args.dataset,

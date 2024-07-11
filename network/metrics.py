@@ -9,15 +9,17 @@ class Metrics:
     def __init__(self, num_classes, nn_type):
         self.num_classes = num_classes
         self.nn_type = nn_type
-
+        
         # target class vector (obd-only)
-        self.target_class = self._build_obd_target_class()
+        if self.nn_type == 'obd':
+            self.target_class = self._build_obd_target_class()
     
     def _build_obd_target_class(self):
         target_class = tf.ones((self.num_classes, self.num_classes - 1), dtype=tf.float32)
         
         return 1 - tf.linalg.band_part(target_class, 0, -1) 
     
+
     def _check_nn_ytrue(self, y_true):
         if len(y_true.shape) > 1:
             y_true = tf.argmax(y_true, axis=-1) 
@@ -30,17 +32,22 @@ class Metrics:
             # TODO: make sure if axis=2 is correct
             # Calculate pairwise distances between y_pred and target_class using Euclidean distance
             distances = tf.norm(tf.expand_dims(y_pred, 1) - self.target_class, axis=2, ord='euclidean')
-            
             # Find the index of the minimum distance as the predicted label
             y_pred = tf.argmin(distances, axis=1)
         elif self.nn_type == 'roycnnstn':
+            # split the network's output
             output, _ = tf.split(y_pred, num_or_size_splits=2, axis=0)
-            y_pred = tf.argmax(tf.nn.softmax(output, axis=1), axis=1, output_type=tf.int64)[:, tf.newaxis]
+            # compute the softmax for the first output
+            output_prob = tf.nn.softmax(output, axis=1)
+            # extract predictions 
+            y_pred = tf.argmax(output_prob, axis=1, output_type=tf.int64)[:, tf.newaxis]
+            y_pred = tf.squeeze(y_pred, axis=1)
         else:
             y_pred = tf.argmax(y_pred, axis=-1) 
 
         return y_pred
 
+    
     def _check_ypred_probas(self, y_pred):
         if self.nn_type == 'obd':
             # Calculate pairwise distances between y_pred and target_class using Euclidean distance
@@ -51,6 +58,7 @@ class Metrics:
             y_pred = tf.nn.softmax(output, axis=1)
 
         return y_pred
+    
 
     def ccr(self, y_true, y_pred):
         # check the neural network ground truth and prediction

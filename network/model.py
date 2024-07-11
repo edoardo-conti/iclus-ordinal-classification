@@ -292,11 +292,10 @@ class NeuralNetwork:
         return model
     
     def roycnnstn(self):
-        cnnstn = CNNStn(self.size, self.num_classes, self.nn_batch_size, fixed_scale=True)
+        # cnnstn = CNNStn(self.size, self.num_classes, self.nn_batch_size, fixed_scale=True)
+        model = CNNStn(self.size, self.num_channels, self.num_classes, self.nn_batch_size, fixed_scale=True)
         
-        # model's input
-        inputs = tf.keras.Input(shape=(self.size, self.size, self.num_channels)) 
-        
-        model = keras.models.Model(inputs=inputs, outputs=cnnstn(inputs), name="roycnnstn")
+        # model build using internal override method
+        model = model.build()
         
         return model

@@ -48,9 +48,6 @@ class ExperimentSets:
                 
 
     def build(self):
-        # setting os environment
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
-        
         # executing a series of initialization functions for the run
         self.check_gpu_availability()
         self.check_mixedp_and_xla()

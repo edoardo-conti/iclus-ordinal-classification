@@ -213,7 +213,7 @@ class Experiment:
         cv_model = self.build_model(hyperparameters=hyperparameters)
 
         # compile the model with the current LR
-        self.compile_model(cv_model, learning_rate=learning_rate)
+        self.compile_model(cv_model, learning_rate=learning_rate, summary=False)
         
         # training the model for 10 epochs (default)
         hpv_history = self.cv_model_train(cv_model,
@@ -322,7 +322,7 @@ class Experiment:
         hpt_model = self.build_model(hyperparameters=best_hyperparameters)
         
         # compile the model with the best learning rate
-        self.compile_model(hpt_model, learning_rate=learning_rate)
+        self.compile_model(hpt_model, learning_rate=learning_rate, summary=False)
                 
         # training
         hpt_history = self.hpt_model_train(hpt_model,
@@ -395,15 +395,15 @@ class Experiment:
         model = net_object.build(nn_model)
 
         # auto-search the last convolutional layer of the model (useful for GRAD-cams)
-        self.last_conv_layer = self.find_last_conv2d(model.layers[1] if nn_model == 'roycnnstn' else model).name
-
+        self.last_conv_layer = self.find_last_conv2d(model).name
+        
         print('◇ model built')
 
         return model
     
     
     # method to compile a neural network model with a specific LR
-    def compile_model(self, model, learning_rate=1e-4, summary=True):
+    def compile_model(self, model, learning_rate=1e-4, summary=False):
         loss = self.settings['loss']
         metrics = self.settings['metrics']
         optimizer = self.settings['optimizer']
@@ -416,8 +416,8 @@ class Experiment:
             optimizer = tf_keras_opt.Adam(learning_rate=learning_rate)
         else:
             optimizer = tf_keras_opt.SGD(learning_rate=learning_rate,
-                                                decay=self.settings['weight_decay'],
-                                                momentum=self.settings['momentum'])
+                                        decay=self.settings['weight_decay'],
+                                        momentum=self.settings['momentum'])
         
         # loss functions
         if loss == 'ODL':
@@ -442,7 +442,7 @@ class Experiment:
         
         if summary:
             print(model.summary())
-
+        
         print('◇ model compiled')
 
 
@@ -505,10 +505,10 @@ class Experiment:
         # compute train and val steps per epoch
         train_steps_per_epoch = len(y_train) // batch_size
         val_steps_per_epoch = len(y_val) // batch_size
-
+        
         # ! testing purpose !
-        train_steps_per_epoch = 5
-        val_steps_per_epoch = 5
+        # train_steps_per_epoch = 25
+        # val_steps_per_epoch = 25
         
         # neural network fit   
         history = model.fit(train_ds,

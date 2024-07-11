@@ -87,17 +87,22 @@ class GradCAMCallback(tf.keras.callbacks.Callback):
                 if found_layer:
                     return found_layer
         return None
-
+    
     def make_gradcam_heatmap(self, img_array, model, last_conv_layer_name, pred_index=None):
-        if model.name == 'roycnnstn':
+        if model.name == 'cnn_stn':
             last_conv_layer = self.find_layer_recursive(model, last_conv_layer_name)
         else:
             last_conv_layer = model.get_layer(last_conv_layer_name)
-        
+
         grad_model = keras.models.Model(model.inputs, [last_conv_layer.output, model.output])
 
         with tf.GradientTape() as tape:
             last_conv_layer_output, preds = grad_model(img_array)
+            
+            if model.name == 'cnn_stn':
+                output, _ = tf.split(preds, num_or_size_splits=2, axis=0)
+                preds = tf.nn.softmax(output, axis=1)
+
             pred_index = pred_index or tf.argmax(preds[0])
             pred_index -= tf.cast(self.model.name == 'obd' and pred_index == 3, tf.int64)
 

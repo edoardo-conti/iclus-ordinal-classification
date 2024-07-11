@@ -2,14 +2,15 @@ import tensorflow as tf
 from keras import Model, layers, initializers
 
 class CNNStn(Model):
-    def __init__(self, img_size, nclasses, batch_size=32, fixed_scale=True):
-        super(CNNStn, self).__init__()
+    def __init__(self, img_size=224, num_channels=3, nclasses=4, batch_size=32, fixed_scale=True, name="cnn_stn"):
+        super(CNNStn, self).__init__(name=name)
         
         self.img_size = img_size
+        self.num_channels = num_channels
         self.nclasses = nclasses
         self.batch_size = batch_size
         self.fixed_scale = fixed_scale
-
+        
         # Convolutional Blocks
         self.block1 = tf.keras.Sequential([
             layers.Conv2D(32, (3, 3), strides=1, padding='same', input_shape=(img_size, img_size, 3)),
@@ -79,13 +80,6 @@ class CNNStn(Model):
         
         self.out = layers.Dense(nclasses, input_shape=(256,))
 
-        # self.block_out = tf.keras.Sequential([
-        #     layers.Dense(256, input_shape=(128,)),
-        #     layers.BatchNormalization(),
-        #     layers.ReLU(),
-        #     layers.Dense(4, input_shape=(256,))
-        # ])
-
         if fixed_scale: # scaling is kept fixed, only translation is learned
             # Regressor for the 3 * 2 affine matrix
             self.fc_loc = tf.keras.Sequential([
@@ -114,7 +108,10 @@ class CNNStn(Model):
                                          input_shape=(32,),
                                          kernel_initializer='zeros', 
                                          bias_initializer=initializers.RandomNormal(mean=0, stddev=0.1))
-    
+
+        # 'self.outputs' must be the last one to be declared
+        self.inputs = tf.keras.Input(shape=(self.img_size, self.img_size, self.num_channels))
+        self.outputs = self.call(self.inputs)
 
     def affine_grid(self, theta, size):
         # Estraiamo la dimensione della griglia
@@ -248,7 +245,7 @@ class CNNStn(Model):
         # grid sampling
         x_1 = self.grid_sample(x, grid_1)
         x_2 = self.grid_sample(x, grid_2)
-
+        
         x = tf.concat([x_1, x_2], axis=0)
 
         return x, scaling
@@ -261,7 +258,22 @@ class CNNStn(Model):
         x = self.block3(x)
         x = self.block4(x)
         x = self.block5(x)
-        x = self.block6(x)
+        # x = self.block6(x)
+        
+        '''
+        hotfix: # x = self.block6(x)
+            explicit block 6 in call function to make the last convolutional layer 
+            accessible to make the model graph connectable to extract gradCAMs.
+        '''
+        # block6 ->
+        x = layers.Conv2D(128, (3, 3), strides=1, padding='same')(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.ReLU()(x)
+        x = layers.Conv2D(128, (3, 3), strides=1, padding='same')(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.ReLU()(x)
+        # <- block6
+
         x = layers.GlobalAveragePooling2D()(x)
         x = self.block7(x)
         x = layers.Dropout(0.3)(x)
@@ -269,11 +281,5 @@ class CNNStn(Model):
 
         return x
     
-
-    # # wip
-    # def predict(self, x, *args, **kwargs):
-    #     # Personalizza il comportamento di model.predict
-    #     # Ad esempio, puoi aggiungere registrazioni, manipolare i dati in input, ecc.
-    #     predictions = super(CNNStn, self).predict(x, *args, **kwargs)
-
-    #     return predictions
+    def build(self):
+        return Model(inputs=self.inputs, outputs=self.outputs, name=self.name)
