@@ -10,7 +10,7 @@ from sklearn.model_selection import ParameterGrid
 from keras import backend as K
 from keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from network.model import NeuralNetwork
-from network.losses import  ordinal_distance_loss, make_cost_matrix, qwk_loss, roy_cce_loss, roy_sord_loss
+from network.losses import  ordinal_distance_loss, make_cost_matrix, qwk_loss, cnnstn_cce_loss, sord_loss
 from network.metrics import Metrics
 from network.callbacks import GradCAMCallback
 
@@ -332,7 +332,7 @@ class Experiment:
                                            y_val=self.y_hpt_val,
                                            epochs=epochs, 
                                            batch_size=batch_size,
-                                           gradcam_freq=1,
+                                           gradcam_freq=3,
                                            rlop=rlop
                                            )
         
@@ -416,22 +416,22 @@ class Experiment:
             optimizer = tf_keras_opt.Adam(learning_rate=learning_rate)
         else:
             optimizer = tf_keras_opt.SGD(learning_rate=learning_rate,
-                                        decay=self.settings['weight_decay'],
+                                        weight_decay=self.settings['weight_decay'],
                                         momentum=self.settings['momentum'])
         
         # loss functions
         if loss == 'ODL':
             loss = ordinal_distance_loss(self.ds_num_classes)
         elif loss == 'CCE':
-            if self.settings['nn_model'] == 'roycnnstn':
-                loss = roy_cce_loss()
+            if self.settings['nn_model'] == 'cnnstn':
+                loss = cnnstn_cce_loss()
             else:
                 loss = tf.keras.losses.CategoricalCrossentropy()  
         elif loss == 'QWK':
             cost_matrix = K.constant(make_cost_matrix(self.ds_num_classes), dtype=K.floatx())
             loss = qwk_loss(cost_matrix)
         elif loss == 'SORD':
-            loss = roy_sord_loss()
+            loss = sord_loss(nn_model=self.settings['nn_model'])
         
         # metrics
         metrics_t = Metrics(self.ds_num_classes, self.settings['nn_model'])
@@ -588,7 +588,7 @@ class Experiment:
         test_steps_per_epoch = -(-len(y_test) // batch_size)
 
         #test_steps_per_epoch = 10
-
+        
         # model evaluation, get the predictions by running the model inference
         y_test_pred = model.predict(X_test,
                                     steps=test_steps_per_epoch,
@@ -597,7 +597,7 @@ class Experiment:
                                     workers=self.workers,
                                     use_multiprocessing=False
                                     )
-        
+
         # save the ground truth and predictions in a JSON file locally
         predictions_to_save = {"y_test": y_test.tolist(), "y_test_pred": y_test_pred.tolist()}
         predictions_save_path = os.path.join(self.hpt_holdout_dir, 'predictions.json')

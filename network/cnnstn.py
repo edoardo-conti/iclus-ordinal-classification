@@ -2,13 +2,21 @@ import tensorflow as tf
 from keras import Model, layers, initializers
 
 class CNNStn(Model):
-    def __init__(self, img_size=224, num_channels=3, nclasses=4, batch_size=32, fixed_scale=True, name="cnn_stn"):
+    def __init__(self, 
+                 img_size=224, 
+                 num_channels=3, 
+                 nclasses=4, 
+                 batch_size=32, 
+                 dropout=0.3, 
+                 fixed_scale=True, 
+                 name="cnn_stn"):
         super(CNNStn, self).__init__(name=name)
         
         self.img_size = img_size
         self.num_channels = num_channels
         self.nclasses = nclasses
         self.batch_size = batch_size
+        self.dropout = dropout
         self.fixed_scale = fixed_scale
         
         # Convolutional Blocks
@@ -113,6 +121,7 @@ class CNNStn(Model):
         self.inputs = tf.keras.Input(shape=(self.img_size, self.img_size, self.num_channels))
         self.outputs = self.call(self.inputs)
 
+
     def affine_grid(self, theta, size):
         # Estraiamo la dimensione della griglia
         _, height, width, _  = size
@@ -135,6 +144,7 @@ class CNNStn(Model):
         grid = tf.reshape(grid, [-1, height, width, 2])
 
         return grid
+
 
     def grid_sample(self, input, grid):
         def process_coord(grid, w_h):
@@ -273,13 +283,15 @@ class CNNStn(Model):
         x = layers.BatchNormalization()(x)
         x = layers.ReLU()(x)
         # <- block6
-
+        
         x = layers.GlobalAveragePooling2D()(x)
         x = self.block7(x)
-        x = layers.Dropout(0.3)(x)
+        if self.dropout > 0:
+            x = layers.Dropout(rate=self.dropout)(x)
         x = self.out(x)
 
         return x
-    
+
+
     def build(self):
         return Model(inputs=self.inputs, outputs=self.outputs, name=self.name)

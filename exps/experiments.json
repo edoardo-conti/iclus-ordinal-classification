@@ -1,4 +1,5 @@
 [
-    {"nn_model":"roycnnstn", "folds": 5, "epochs":80, "batch_size":[64], "dropout":[0.3], "augmentation":true, "loss":"SORD", "metrics":["ccr","f1","acc_1off","acc_2off","qwk","spearman","mae","amae","mmae","rmse","ms"], "optimizer":"Adam", "learning_rate":[1e-4], "weight_decay":1e-6, "momentum":0.9},
-    {"nn_model":"resnet18", "folds": 5, "epochs":5, "batch_size":[32], "dropout":[0.3], "augmentation":true, "loss":"CCE", "metrics":["ccr","f1","acc_1off","acc_2off","qwk","spearman","mae","amae","mmae","rmse","ms"], "optimizer":"Adam", "learning_rate":["cdr"], "weight_decay":1e-6, "momentum":0.9}
+    {"nn_model":"resnet18", "folds": 5, "epochs":80, "batch_size":[32], "dropout":[0.3], "augmentation":true, "loss":"SORD", "metrics":["ccr","f1","acc_1off","acc_2off","qwk","spearman","mae","amae","mmae","rmse","ms"], "optimizer":"SGD", "learning_rate":["cdr"], "weight_decay":1e-6, "momentum":0.9},
+    {"nn_model":"cnnstn", "folds": 5, "epochs":80, "batch_size":[32], "dropout":[0.5], "augmentation":true, "loss":"SORD", "metrics":["ccr","f1","acc_1off","acc_2off","qwk","spearman","mae","amae","mmae","rmse","ms"], "optimizer":"SGD", "learning_rate":["cdr"], "weight_decay":1e-6, "momentum":0.9},
+    {"nn_model":"resnet18", "folds": 5, "epochs":100, "batch_size":[32], "dropout":[0.3], "augmentation":true, "loss":"SORD", "metrics":["ccr","f1","acc_1off","acc_2off","qwk","spearman","mae","amae","mmae","rmse","ms"], "optimizer":"Adam", "learning_rate":[1e-4], "weight_decay":1e-6, "momentum":0.9}
 ]

@@ -90,7 +90,7 @@ def main():
                 for hpv_curr_split, (hpv_train, hpv_val) in enumerate(hpv_sss, start=1):
                     print(f"******** Grid Search Holdout {hpv_curr_split}/{args.hpv_splits} *******")
                     utilities.log_this(experiments_set.logs_path, f"grid search holdout {hpv_curr_split}/{args.hpv_splits}", p=False)
-
+                    
                     # extract patients from the splitting
                     hpv_train = [train_pats[pat] for pat in hpv_train]
                     hpv_val = [train_pats[pat] for pat in hpv_val]
@@ -103,14 +103,12 @@ def main():
 
                     # compute the grid of every parameters combination
                     hpv_grid = experiment.get_hyperparameters_grid()
-                    
-                    print(hpv_grid)
-
+                                
                     # gridsearching...
                     for hp_iter, hyperparameters in enumerate(hpv_grid, start=1):
                         print(f"testing HPs [{hp_iter}/{len(hpv_grid)}]")
 
-                        experiment.evaluate_hyperparams(hyperparameters, epochs=5)
+                        experiment.evaluate_hyperparams(hyperparameters, epochs=6)
 
                     # save the MAE values of each parameter combination for the current holdout
                     experiment.splits_mae_scores[str(hpv_curr_split)] = experiment.mae_scores
@@ -126,7 +124,7 @@ def main():
                     best_params = {'batch_size': exp_sett["batch_size"][0], 'dropout': exp_sett["dropout"][0], 'learning_rate': exp_sett["learning_rate"][0], 'link_function': exp_sett["link_function"][0], 'use_tau': exp_sett["use_tau"][0]}
                 else:
                     best_params = {'batch_size': exp_sett["batch_size"][0], 'dropout': exp_sett["dropout"][0], 'learning_rate': exp_sett["learning_rate"][0]}
-
+                
             print(best_params)
 
             # ~~~~~~~~~~~~~~~~~~~~~~ NETWORK TRAINING HOLDOUTS ~~~~~~~~~~~~~~~~~~~~~~
@@ -154,7 +152,7 @@ def main():
 
                 # train the network with the best parameters on the holdout and get the history 
                 hpt_model, hpt_history = experiment.hpt_train_network(best_params)
-
+                
                 # save the training graphs
                 experiment.nn_train_graphs(hpt_history)
 

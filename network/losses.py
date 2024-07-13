@@ -63,27 +63,23 @@ def qwk_loss(cost_matrix):
     return _qwk_loss
 
 
-def roy_cce_loss():
+def cnnstn_cce_loss():
     cce = tf.keras.losses.CategoricalCrossentropy()
-
-    def _roy_cce_loss(y_true, y_pred):
+    
+    def _cnnstn_cce_loss(y_true, y_pred):
         y_pred_0, _ = tf.split(y_pred, num_or_size_splits=2, axis=0)
         y_pred_0 = tf.nn.softmax(y_pred_0, axis=1)
         
         return cce(y_true, y_pred_0)
 
-    return _roy_cce_loss
+    return _cnnstn_cce_loss
 
 
-def roy_sord_loss(cost_mul=2, lambda_reg=1.):    
-    def _roy_sord_loss(y_true, y_pred):
+def sord_loss(nn_model, cost_mul=2, lambda_reg=1.):    
+    def _sord_loss(y_true, y_pred):
         # get the actual batch_size (and classes)
         batch_size = tf.shape(y_true)[0]
         num_classes = tf.shape(y_true)[1]
-        
-        # split the network output and compute the prediction using log softmax for numerical stability
-        y_pred_1, y_pred_2 = tf.split(y_pred, num_or_size_splits=2, axis=0)
-        log_predictions_probs = tf.nn.log_softmax(y_pred_1, axis=1)
         
         # creating labels_sord with effective batch size x classes
         labels_sord = tf.zeros([batch_size, num_classes], tf.int32)
@@ -95,18 +91,25 @@ def roy_sord_loss(cost_mul=2, lambda_reg=1.):
                 value = tf.cast(cost_mul, tf.int32) * tf.math.square(tf.abs(current_label - class_idx))
                 labels_sord = tf.tensor_scatter_nd_update(labels_sord, [[batch_idx, class_idx]], [value])
 
+        # split the operations based on neural network used
+        if nn_model == 'cnnstn':
+            # split the network output if CNNStn
+            y_pred, y_pred_2 = tf.split(y_pred, num_or_size_splits=2, axis=0)
+            # consistency loss
+            mse_loss = lambda_reg * tf.reduce_mean(tf.square(y_pred - y_pred_2))
+
+        # compute the prediction using log softmax for numerical stability
+        log_predictions_probs = tf.nn.log_softmax(y_pred, axis=1)
+
         # compute the softmax for the SORD labels
         labels_sord_probs = tf.nn.softmax(tf.cast(-labels_sord, tf.float32), axis=1)
-
+        
         # cross entropy
         sord_loss = tf.reduce_mean(tf.reduce_sum(-labels_sord_probs * log_predictions_probs, axis=1))
-
-        # consistency loss
-        mse_loss = lambda_reg * tf.reduce_mean(tf.square(y_pred_1 - y_pred_2))
         
-        # combine the losses
-        loss = sord_loss + mse_loss
+        # assign the final loss return value
+        loss = sord_loss + mse_loss if nn_model == 'cnnstn' else sord_loss
 
         return loss
 
-    return _roy_sord_loss
+    return _sord_loss

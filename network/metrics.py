@@ -34,7 +34,7 @@ class Metrics:
             distances = tf.norm(tf.expand_dims(y_pred, 1) - self.target_class, axis=2, ord='euclidean')
             # Find the index of the minimum distance as the predicted label
             y_pred = tf.argmin(distances, axis=1)
-        elif self.nn_type == 'roycnnstn':
+        elif self.nn_type == 'cnnstn':
             # split the network's output
             output, _ = tf.split(y_pred, num_or_size_splits=2, axis=0)
             # compute the softmax for the first output
@@ -53,7 +53,7 @@ class Metrics:
             # Calculate pairwise distances between y_pred and target_class using Euclidean distance
             distances = tf.norm(tf.expand_dims(y_pred, 1) - self.target_class, axis=2, ord='euclidean')
             y_pred = tf.nn.softmax(-distances)
-        elif self.nn_type == 'roycnnstn':
+        elif self.nn_type == 'cnnstn':
             output, _ = tf.split(y_pred, num_or_size_splits=2, axis=0)
             y_pred = tf.nn.softmax(output, axis=1)
 

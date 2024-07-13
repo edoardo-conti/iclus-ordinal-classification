@@ -291,9 +291,14 @@ class NeuralNetwork:
         
         return model
     
-    def roycnnstn(self):
+    def cnnstn(self):
         # cnnstn = CNNStn(self.size, self.num_classes, self.nn_batch_size, fixed_scale=True)
-        model = CNNStn(self.size, self.num_channels, self.num_classes, self.nn_batch_size, fixed_scale=True)
+        model = CNNStn(self.size, 
+                       self.num_channels, 
+                       self.num_classes, 
+                       self.nn_batch_size, 
+                       self.dropout, 
+                       fixed_scale=True)
         
         # model build using internal override method
         model = model.build()
