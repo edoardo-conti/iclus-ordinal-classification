@@ -83,7 +83,7 @@ def sord_loss(nn_model, cost_mul=2, lambda_reg=1.):
         
         # creating labels_sord with effective batch size x classes
         labels_sord = tf.zeros([batch_size, num_classes], tf.int32)
-
+        
         # build the SORD label
         for batch_idx in range(batch_size):
             current_label = tf.argmax(y_true[batch_idx], axis=0, output_type=tf.int32)
@@ -97,7 +97,7 @@ def sord_loss(nn_model, cost_mul=2, lambda_reg=1.):
             y_pred, y_pred_2 = tf.split(y_pred, num_or_size_splits=2, axis=0)
             # consistency loss
             mse_loss = lambda_reg * tf.reduce_mean(tf.square(y_pred - y_pred_2))
-
+        
         # compute the prediction using log softmax for numerical stability
         log_predictions_probs = tf.nn.log_softmax(y_pred, axis=1)
 

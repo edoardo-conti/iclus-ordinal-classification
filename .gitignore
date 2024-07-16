@@ -24,3 +24,5 @@ results/*
 logs/fit/*
 test_pdf.ipynb
 *.pkl
+
+experiment_launcher.ipynb

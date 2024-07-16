@@ -365,7 +365,7 @@ class Metrics:
                 denominator += d * expected_count / num_scored_items
 
         return 1.0 - numerator / denominator
-
+    
     def confusion_matrix(self, y_true, y_pred, show=False):
         # check the neural network ground truth and prediction
         y_true = self._check_nn_ytrue(y_true)
