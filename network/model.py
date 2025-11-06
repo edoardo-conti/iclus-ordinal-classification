@@ -10,11 +10,11 @@ class NeuralNetwork:
                  ds_img_size:int = 224,
                  ds_img_channels:int = 3,
                  ds_num_classes:int = 4,
-                 nn_backbone:str = 'resnet18',
+                 nn_backbone:str = 'resnet50',
                  nn_batch_size:int = 32,
-                 nn_dropout:float = 0.0,
+                 nn_dropout:float = 0.3,
                  nn_activation:str = 'relu',
-                 clm_link:str = 'logit',
+                 clm_link:str = 'cloglog',
                  clm_use_tau:bool = True,
                  obd_hidden_size:int = 512):
         self.size = ds_img_size
@@ -52,7 +52,7 @@ class NeuralNetwork:
         # x = keras.layers.Flatten()(x)
         
         # add the dense layer
-        x = keras.layers.Dense(dense_units)(x)
+        x = keras.layers.Dense(128)(x) # temp fix 1000 -> 128
         
         # apply the dropout layer if requested
         if self.dropout > 0:
@@ -188,7 +188,8 @@ class NeuralNetwork:
 
         # get the model based on the backbone
         if backbone == 'resnet18':
-            conv_net = self._resnet18_convnet(self.input_shape)
+            #conv_net = self._resnet18_convnet(self.input_shape)
+            conv_net = self._resnet50_convnet(self.input_shape)
         if backbone == 'resnet50':
             conv_net = self._resnet50_convnet(self.input_shape)
         elif backbone == 'vgg16':
@@ -218,7 +219,7 @@ class NeuralNetwork:
         x = conv_net.output
         
         # fully connected units
-        x = keras.layers.Dense(1000)(x)
+        # x = keras.layers.Dense(1000)(x)
         
         # apply the dropout layer if requested
         if self.dropout > 0:

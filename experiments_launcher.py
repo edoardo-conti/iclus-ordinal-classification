@@ -9,7 +9,7 @@ from experiment_sets import ExperimentSets
 from experiment import Experiment
 
 def main():
-    parser = argparse.ArgumentParser(description="LUS Ordinal Classification")
+    parser = argparse.ArgumentParser(description="LUS Ordinal Classification - Training")
     parser.add_argument("--exps_json", type=str, required=True, help="json file containing the experiments to be performed")
     parser.add_argument("--dataset", type=str, required=True, help="dataset folder")
     parser.add_argument("--results_dir", type=str, default="results/", help="directory used to store the results")

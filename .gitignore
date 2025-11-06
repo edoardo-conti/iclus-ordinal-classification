@@ -26,3 +26,11 @@ test_pdf.ipynb
 *.pkl
 
 experiment_launcher.ipynb
+
+*.mp4
+
+*.png
+*.jpg
+
+*.csv
+*.xlsx

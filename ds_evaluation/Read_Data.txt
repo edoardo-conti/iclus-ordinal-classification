@@ -1,0 +1,14 @@
+How to Read the Data
+ 
+1. Each medical center folder corresponds to its .mat file storing all the metadata. 
+3. Read the .mat file in the Matlab. 
+3. Each medical folder and subfolders are given in this hierarchy
+   patient_id, analysis_id and file_area_code can be accessed through the mat file corresponding to the medical center. 
+   The access hierarchy of the data from the drive through an example is as follows.  
+
+    Rome -> Rome_Cropped -> 1020 (refers to patient_id) -> 1080 (refers to analysis_id) -> clipped_1080_1 (1 refers to file_area_code).mp4
+
+4. In case of any further information contact us at libertario.demi@unitn.it, federico.mento@unitn.it, umair.khan@unitn.it
+
+
+
